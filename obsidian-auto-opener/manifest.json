@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-auto-opener",
+  "name": "Local Auto Opener",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Exposes a local REST API endpoint (127.0.0.1) to automatically open notes in new tabs upon HTTP request from AI agents.",
+  "author": "Antigravity Assistant",
+  "isDesktopOnly": true
+}
