@@ -1,0 +1,9 @@
+{
+  "id": "dedup-tabs",
+  "name": "Dedup Tabs",
+  "version": "0.6.1",
+  "minAppVersion": "0.15.0",
+  "description": "Prevents opening duplicate tabs for the same note by focusing existing tabs instead.",
+  "author": "Satoshi Nagayasu",
+  "isDesktopOnly": false
+}
