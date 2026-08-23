@@ -1,0 +1,10 @@
+{
+  "id": "obsidian-publish-to-gist",
+  "name": "Publish to Gist",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Publish your notes to GitHub Gist securely.",
+  "author": "Satoshi Nagayasu",
+  "authorUrl": "https://github.com/snaga",
+  "isDesktopOnly": false
+}
