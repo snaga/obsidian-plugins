@@ -1,0 +1,10 @@
+{
+	"id": "obsidian-single-html-exporter",
+	"name": "Single HTML Exporter",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Export Obsidian notes to a single self-contained HTML file with embedded images (Base64).",
+	"author": "Satoshi Nagayasu",
+	"authorUrl": "https://github.com/snaga",
+	"isDesktopOnly": true
+}
