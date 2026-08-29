@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-smart-search",
+  "name": "Smart Search",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "AI Query Expansion + High-Speed ripgrep Search for intelligent note discovery and similar note recommendation.",
+  "author": "Satoshi Nagayasu",
+  "isDesktopOnly": true
+}
