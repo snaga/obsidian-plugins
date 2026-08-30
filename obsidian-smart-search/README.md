@@ -14,11 +14,11 @@
    - 抽出されたキーワード群を用いてローカルの `ripgrep`（`rg`）を並列実行。数万ファイルある巨大なVaultでもミリ秒単位で高速スコアリング。
 3. **📊 マルチファクター・スコアリング（Multi-Factor Scoring）**
    - 単なる単語の連呼（TF）に偏らず、**キーワード網羅性（多様性 60%）＋ タイトル完全一致ボーナス（25%）＋ 出現頻度（15%）** を統合した独自のアルゴリズムで、人間の直感に極めて近い高精度なランキングを実現。
-4. **🏢 個人＆企業（エンタープライズ）両対応のハイブリッド設計**
-   - **個人・開発環境**: Google AI Studio（API Key）で手軽に即利用可能。
-   - **会社・本番環境**: Google Cloud Vertex AI（ADC / キーレス サービスアカウント）に対応。社内セキュリティポリシーに準拠し、JSONキー不要で安全に利用可能。
+4. **🔒 安全な SecretStorage 管理 ＆ 企業（エンタープライズ）両対応のハイブリッド設計**
+   - **個人・開発環境**: Google AI Studio の API キーを、Obsidian 公式の **SecretStorage（OS のキーチェーン / セキュアストレージ）** で安全に管理。Vault のファイル（`data.json`）に平文で保存されないため、Git リモートへの誤コミットや情報漏洩を完全に防止。
+   - **会社・本番環境**: Google Cloud Vertex AI（ADC / キーレス サービスアカウント）に対応。社内セキュリティポリシーに準拠し、JSON キー不要で安全に利用可能。
 5. **📝 柔軟なプロンプトカスタマイズ（Full Editor Modal）**
-   - システムプロンプトを設定画面からフル編集可能。専門ドメイン（医療、法律、特定技術など）や英語メインのVaultにも即座に適応可能（デフォルト値へのワンクリックリセット対応）。
+   - システムプロンプトを設定画面からフル編集可能。専門ドメイン（医療、法律、特定技術など）や英語メインの Vault にも即座に適応可能（初期値へのワンクリックリセット対応）。
 6. **🔍 インタラクティブ自由検索バー**
    - サイドバー上部に常設された検索バーから、いつでも自然言語で質問・検索が可能。
 
@@ -33,30 +33,35 @@
   - Linux: `sudo apt install ripgrep`
 
 ### 2. プラグインのインストール
-1. `obsidian-smart-search` フォルダを、Vaultの `.obsidian/plugins/` ディレクトリに配置します。
-2. Obsidianの「設定」➔「コミュニティプラグイン」を開き、**Smart Search** を有効化（ON）にします。
+1. `obsidian-smart-search` フォルダを、Vault の `.obsidian/plugins/` ディレクトリに配置します。
+2. Obsidian の「設定」➔「コミュニティプラグイン」を開き、**Smart Search** を有効化（ON）にします。
 3. リロード（`Ctrl + R` / `Cmd + R`）するか、右サイドバーのリボンアイコン（✨）をクリックしてパネルを開きます。
 
 ---
 
 ## ⚙️ 設定 (Configuration)
 
-Obsidianの **「設定」➔「Smart Search」** から設定を行います。
+Obsidian の **「設定」➔「Smart Search」** から設定を行います。設定画面はすべて日本語に対応しています。
 
-### 🌐 LLM Provider Selection
-- **Google AI Studio (API Key - Personal / Dev)**
-  - **Gemini API Key**: [Google AI Studio](https://aistudio.google.com/) で発行したAPIキーを入力。
-  - **Gemini Model**: `gemini-3.5-flash-lite`（デフォルト）など。
-- **Google Cloud Vertex AI (ADC / Keyless Service Account - Enterprise)**
-  - **GCP Project ID**: Google CloudのプロジェクトIDを入力。
-  - **Vertex Model ID**: `gemini-3.5-flash-lite`（デフォルト）など。
-  - *※ 端末側で `gcloud auth application-default login` が完了していれば、APIキーなしで自動認証されます。*
+### 🌐 LLM 実行環境 (プロバイダー)
+- **Google AI Studio（API キー - 個人 / 開発環境）**
+  - **Gemini API キー**: Obsidian の SecretStorage コンポーネントから、安全に保管された API キーを選択または新規登録します。
+  - **Gemini モデル**: `gemini-3.5-flash-lite`（デフォルト）など。
+- **Google Cloud Vertex AI（ADC / キーレス サービスアカウント - 企業環境）**
+  - **GCP プロジェクト ID**: Google Cloud のプロジェクト ID を入力。
+  - **Vertex モデル ID**: `gemini-1.5-flash` または `gemini-3.5-flash-lite`（デフォルト）など。
+  - *※ 端末側で `gcloud auth application-default login` が完了していれば、API キーなしで自動認証されます。*
 
-### 📝 System Prompt Template
-- **✏️ Edit in Full Editor**:
+### 📝 システムプロンプト設定
+- **✏️ エディタで編集**:
   - モーダルエディタでプロンプトテンプレートを自由に編集できます。
-  - プレースホルダー `{{input}}` に「ノート情報」または「ユーザー検索クエリ」が自動挿入されます。
-  - **🔄 Reset to Default**: いつでも初期のベストプラクティス・プロンプトに戻せます。
+  - プレースホルダー `{{input}}` に「ノート情報（タイトル・主要見出し階層・冒頭抜粋）」または「ユーザー検索クエリ」が自動挿入されます。
+  - **🔄 初期値に戻す**: いつでも初期のベストプラクティス・プロンプトに戻せます。
+
+### 📊 検索結果 & キャッシュ設定
+- **キーワードキャッシュ**: ノートや検索クエリごとの展開キーワードをキャッシュし、無駄な API 呼び出しを削減。必要に応じてワンクリックでクリア可能。
+- **最大表示件数**: サイドバーに表示する類似ノートの件数（5〜50件、デフォルト: 20件）。
+- **ノート切り替え時の自動検索**: アクティブノート変更時の自動リフレッシュの ON/OFF。
 
 ---
 

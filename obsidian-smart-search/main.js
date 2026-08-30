@@ -137,6 +137,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // 📝 プロンプト編集用のモーダルダイアログ
+// 📝 プロンプト編集用のモーダルダイアログ
 class PromptEditModal extends Modal {
     constructor(app, title, desc, currentValue, defaultValue, onSave) {
         super(app);
@@ -168,29 +169,29 @@ class PromptEditModal extends Modal {
         
         // リセットボタン
         const resetBtn = buttonBar.createEl('button', {
-            text: '🔄 Reset to Default',
+            text: '🔄 初期値に戻す',
             cls: 'mod-warning'
         });
         resetBtn.addEventListener('click', () => {
             textArea.value = this.defaultValue;
-            new Notice('Reverted to default prompt template.');
+            new Notice('プロンプトテンプレートを初期値に戻しました。');
         });
 
         const rightBtns = buttonBar.createDiv({ attr: { style: 'display: flex; gap: 8px;' } });
-        const cancelBtn = rightBtns.createEl('button', { text: 'Cancel' });
+        const cancelBtn = rightBtns.createEl('button', { text: 'キャンセル' });
         cancelBtn.addEventListener('click', () => {
             this.close();
         });
 
         const saveBtn = rightBtns.createEl('button', {
-            text: '💾 Save Template',
+            text: '💾 保存する',
             cls: 'mod-cta'
         });
         saveBtn.addEventListener('click', async () => {
             const val = textArea.value.trim();
             const toSave = (val === this.defaultValue.trim()) ? '' : val;
             await this.onSave(toSave);
-            new Notice('Prompt template saved successfully.');
+            new Notice('プロンプトテンプレートを保存しました。');
             this.close();
         });
     }
@@ -972,18 +973,17 @@ class SmartSearchSettingTab extends PluginSettingTab {
     display() {
         const { containerEl } = this;
         containerEl.empty();
-        containerEl.createEl('h2', { text: 'Smart Search Settings' });
 
-        // ===== 🏢 Provider Selection =====
-        containerEl.createEl('h3', { text: '🌐 LLM Provider Selection' });
+        containerEl.createEl('h2', { text: 'Smart Search 設定' });
 
+        // ===== 🌐 Provider Selection =====
         new Setting(containerEl)
-            .setName('Provider Environment')
-            .setDesc('Select whether to use personal Google AI Studio (API Key) or corporate Google Cloud Vertex AI (ADC / gcloud).')
+            .setName('LLM 実行環境 (プロバイダー)')
+            .setDesc('個人の Google AI Studio（SecretStorage による API キー管理）か、会社の Google Cloud Vertex AI（ADC / gcloud キーレス認証）を選択します。')
             .addDropdown((dropdown) =>
                 dropdown
-                    .addOption('ai-studio', 'Google AI Studio (API Key - Personal / Dev)')
-                    .addOption('vertex-ai', 'Google Cloud Vertex AI (ADC / Keyless Service Account - Enterprise)')
+                    .addOption('ai-studio', 'Google AI Studio（API キー - 個人 / 開発環境）')
+                    .addOption('vertex-ai', 'Google Cloud Vertex AI（ADC / キーレス サービスアカウント - 企業環境）')
                     .setValue(this.plugin.settings.provider || 'ai-studio')
                     .onChange(async (val) => {
                         this.plugin.settings.provider = val;
@@ -996,11 +996,11 @@ class SmartSearchSettingTab extends PluginSettingTab {
 
         if (isVertex) {
             // ===== 🏢 Google Cloud Vertex AI Settings =====
-            containerEl.createEl('h4', { text: '🏢 Google Cloud Vertex AI Configuration' });
+            containerEl.createEl('h4', { text: '🏢 Google Cloud Vertex AI 設定' });
 
             new Setting(containerEl)
-                .setName('GCP Project ID')
-                .setDesc('Google Cloud Project ID (e.g. my-company-ai-prod).')
+                .setName('GCP プロジェクト ID')
+                .setDesc('Google Cloud のプロジェクト ID を入力してください（例: my-company-ai-prod）。')
                 .addText((text) =>
                     text
                         .setPlaceholder('my-company-project-id')
@@ -1012,8 +1012,8 @@ class SmartSearchSettingTab extends PluginSettingTab {
                 );
 
             new Setting(containerEl)
-                .setName('Vertex Model ID')
-                .setDesc('Model ID to use in Vertex AI (Endpoint is fixed to global aiplatform.googleapis.com).')
+                .setName('Vertex モデル ID')
+                .setDesc('Vertex AI で使用するモデル ID を指定します（エンドポイントは global aiplatform.googleapis.com に固定）。')
                 .addText((text) =>
                     text
                         .setPlaceholder('gemini-1.5-flash')
@@ -1026,18 +1026,18 @@ class SmartSearchSettingTab extends PluginSettingTab {
 
             // ADC Status hint
             const hintBox = containerEl.createDiv({ attr: { style: 'padding: 8px 12px; background: var(--background-secondary); border-left: 3px solid var(--interactive-accent); border-radius: var(--radius-s); font-size: 12px; margin-bottom: 16px;' } });
-            hintBox.createEl('strong', { text: 'ℹ️ Keyless Authentication via ADC:' });
+            hintBox.createEl('strong', { text: 'ℹ️ ADC（Application Default Credentials）によるキーレス認証:' });
             hintBox.createEl('p', { 
-                text: 'Authentication automatically uses `gcloud auth application-default print-access-token`. If your service account impersonation is already configured in gcloud CLI, no API keys or JSON files are required.',
+                text: '認証には `gcloud auth application-default print-access-token` が自動的に使用されます。gcloud CLI でサービスアカウント偽装が設定されていれば、API キーや JSON 認証情報ファイルを配置することなく安全に利用できます。',
                 attr: { style: 'margin: 4px 0 0 0; color: var(--text-muted);' }
             });
         } else {
             // ===== 🏠 Google AI Studio Settings =====
-            containerEl.createEl('h4', { text: '🏠 Google AI Studio Configuration' });
+            containerEl.createEl('h4', { text: '🏠 Google AI Studio 設定' });
 
             new Setting(containerEl)
-                .setName('Gemini API Key')
-                .setDesc('Obsidian SecretStorage から Gemini API キー（AI Studio）を選択または登録してください。Vault内に平文保存されず安全に保護されます。')
+                .setName('Gemini API キー')
+                .setDesc('Obsidian の SecretStorage から Gemini API キー（AI Studio）を選択または安全に登録してください。Vault 内のファイルに平文保存されず安全に保護されます。')
                 .addComponent((el) =>
                     new SecretComponent(this.app, el)
                         .setValue(this.plugin.settings.geminiApiKey || '')
@@ -1048,8 +1048,8 @@ class SmartSearchSettingTab extends PluginSettingTab {
                 );
 
             new Setting(containerEl)
-                .setName('Gemini Model')
-                .setDesc('Model for query rewriting in AI Studio.')
+                .setName('Gemini モデル')
+                .setDesc('クエリ拡張に使用する AI Studio のモデルを指定します。')
                 .addText((text) =>
                     text
                         .setPlaceholder('gemini-3.5-flash-lite')
@@ -1062,20 +1062,20 @@ class SmartSearchSettingTab extends PluginSettingTab {
         }
 
         // ===== 📝 Unified System Prompt =====
-        containerEl.createEl('h3', { text: '📝 System Prompt Template' });
+        containerEl.createEl('h3', { text: '📝 システムプロンプト設定' });
 
         const isCustom = Boolean(this.plugin.settings.promptTemplate && this.plugin.settings.promptTemplate.trim());
         const promptSetting = new Setting(containerEl)
-            .setName('Unified Query Expansion Prompt')
-            .setDesc(isCustom ? '🟢 Customized template active. Use {{input}} as placeholder.' : '⚪ Default template active. Use {{input}} as placeholder.')
+            .setName('統合クエリ拡張プロンプト')
+            .setDesc(isCustom ? '🟢 カスタムテンプレートが有効です。プレースホルダーとして {{input}} を使用してください。' : '⚪ デフォルトテンプレートが有効です。プレースホルダーとして {{input}} を使用してください。')
             .addButton((btn) => {
-                btn.setButtonText('✏️ Edit in Full Editor')
+                btn.setButtonText('✏️ エディタで編集')
                     .setCta()
                     .onClick(() => {
                         new PromptEditModal(
                             this.app,
-                            'Edit Unified Query Expansion Prompt Template',
-                            'This single smart prompt handles both active note expansion and custom search bar queries. Placeholder: {{input}}',
+                            '統合クエリ拡張プロンプトの編集',
+                            'この単一のプロンプトで、開いているノートの類似展開とカスタム検索バーの両方をスマートに処理します。プレースホルダー: {{input}}',
                             this.plugin.settings.promptTemplate,
                             DEFAULT_UNIFIED_PROMPT,
                             async (newVal) => {
@@ -1089,43 +1089,43 @@ class SmartSearchSettingTab extends PluginSettingTab {
 
         if (isCustom) {
             promptSetting.addButton((btn) => {
-                btn.setButtonText('🔄 Reset')
-                    .setTooltip('Reset to default template')
+                btn.setButtonText('🔄 初期値に戻す')
+                    .setTooltip('デフォルトのプロンプトテンプレートに戻します')
                     .onClick(async () => {
                         this.plugin.settings.promptTemplate = '';
                         await this.plugin.saveSettings();
-                        new Notice('Reset Prompt to default');
+                        new Notice('プロンプトを初期値にリセットしました');
                         this.display();
                     });
             });
         }
 
         const details = containerEl.createEl('details', { attr: { style: 'margin: -8px 0 16px 0; padding: 6px 12px; background: var(--background-secondary); border-radius: var(--radius-s); font-size: 12px; color: var(--text-muted); cursor: pointer;' } });
-        details.createEl('summary', { text: '👁️ View current effective prompt' });
+        details.createEl('summary', { text: '👁️ 現在有効なプロンプトを確認する' });
         details.createEl('pre', { text: isCustom ? this.plugin.settings.promptTemplate : DEFAULT_UNIFIED_PROMPT, attr: { style: 'white-space: pre-wrap; font-family: var(--font-monospace); font-size: 11px; margin-top: 6px;' } });
 
         // ===== 📊 Ranking & Cache =====
-        containerEl.createEl('h3', { text: '📊 Ranking & Cache' });
+        containerEl.createEl('h3', { text: '📊 検索結果 & キャッシュ設定' });
 
         const cacheCount = Object.keys(this.plugin.settings.queryCache || {}).length;
         new Setting(containerEl)
-            .setName('Keyword Cache')
-            .setDesc(`Currently cached expanded keywords for ${cacheCount} item(s).`)
+            .setName('キーワードキャッシュ')
+            .setDesc(`現在 ${cacheCount} 件のノート/クエリのキーワード展開結果がキャッシュされています。`)
             .addButton((btn) =>
                 btn
-                    .setButtonText('Clear Cache')
+                    .setButtonText('キャッシュをクリア')
                     .setWarning()
                     .onClick(async () => {
                         this.plugin.settings.queryCache = {};
                         await this.plugin.saveData(this.plugin.settings);
-                        new Notice('✅ Keyword cache cleared successfully.');
+                        new Notice('✅ キーワードキャッシュを正常にクリアしました。');
                         this.display();
                     })
             );
 
         new Setting(containerEl)
-            .setName('Max Results')
-            .setDesc('Number of similar notes to display in the sidebar (default: 20).')
+            .setName('最大表示件数')
+            .setDesc('サイドバーに表示する類似ノートの最大件数を設定します（デフォルト: 20件）。')
             .addSlider((slider) =>
                 slider
                     .setLimits(5, 50, 5)
@@ -1138,8 +1138,8 @@ class SmartSearchSettingTab extends PluginSettingTab {
             );
 
         new Setting(containerEl)
-            .setName('Auto Refresh on Note Change')
-            .setDesc('Automatically search similar notes when switching active markdown notes.')
+            .setName('ノート切り替え時の自動検索')
+            .setDesc('アクティブな Markdown ノートを切り替えた際に、自動的に類似ノートを検索します。')
             .addToggle((toggle) =>
                 toggle
                     .setValue(this.plugin.settings.autoRefresh)
