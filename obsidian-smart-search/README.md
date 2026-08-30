@@ -1,7 +1,7 @@
 # 🔍 Smart Search for Obsidian
 
-> **AI Query Expansion + High-Speed `ripgrep` Search**  
-> 自然言語クエリや開いているノートから、LLMが「本質的なキーワード」を多角的に展開し、ローカルVaultを爆速全文検索して最適なノートを発見するObsidianプラグイン。
+> **AI Query Expansion + Zero-Dependency In-Memory Vault Search**  
+> 自然言語クエリや開いているノートから、LLMが「本質的なキーワード」を多角的に展開し、Obsidian 内部キャッシュ（`cachedRead`）を活用したインメモリ走査で最適なノートを爆速発見するObsidianプラグイン（デスクトップ・モバイル完全対応）。
 
 ---
 
@@ -10,12 +10,14 @@
 1. **🧠 AI クエリ拡張（Query Expansion / Query Rewriting）**
    - ユーザーの曖昧な質問や検索キーワードから、LLM（Gemini）が「固有名詞」「ビジネス課題」「技術用語」「同義語・表記揺れ」の4視点で8〜12個のキーワードを自動生成。
    - 長い複合語（例:「人材マネジメント」➔ `["人材", "マネジメント", ...]`）を核となる単語に分解し、文章中で離れて同居（Co-occurrence）している関連ノートも確実に取りこぼさずヒットさせます。
-2. **⚡ 超高速全文検索（`ripgrep` パワード）**
-   - 抽出されたキーワード群を用いてローカルの `ripgrep`（`rg`）を並列実行。数万ファイルある巨大なVaultでもミリ秒単位で高速スコアリング。
+2. **⚡ ゼロ依存・超高速インメモリ全文検索（Obsidian `cachedRead` ネイティブ）**
+   - 外部 CLI（ripgrep など）のインストールは一切不要！
+   - Obsidian の内部メモリキャッシュ（`cachedRead`）を活用した純粋な JavaScript/TypeScript インメモリ走査により、数千ノート規模の Vault でも **わずか 30〜50ミリ秒** で爆速スコアリング。
+   - **iOS / iPadOS / Android のモバイル環境でもデスクトップと全く同様に完全動作** します。
 3. **📊 マルチファクター・スコアリング（Multi-Factor Scoring）**
    - 単なる単語の連呼（TF）に偏らず、**キーワード網羅性（多様性 60%）＋ タイトル完全一致ボーナス（25%）＋ 出現頻度（15%）** を統合した独自のアルゴリズムで、人間の直感に極めて近い高精度なランキングを実現。
 4. **🔒 安全な SecretStorage 管理 ＆ 企業（エンタープライズ）両対応のハイブリッド設計**
-   - **個人・開発環境**: Google AI Studio の API キーを、Obsidian 公式の **SecretStorage（OS のキーチェーン / セキュアストレージ）** で安全に管理。Vault のファイル（`data.json`）に平文で保存されないため、Git リモートへの誤コミットや情報漏洩を完全に防止。
+   - **個人・開発環境 / モバイル**: Google AI Studio の API キーを、Obsidian 公式の **SecretStorage（OS のキーチェーン / セキュアストレージ）** で安全に管理。Vault のファイル（`data.json`）に平文で保存されないため、Git リモートへの誤コミットや情報漏洩を完全に防止。
    - **会社・本番環境**: Google Cloud Vertex AI（ADC / キーレス サービスアカウント）に対応。社内セキュリティポリシーに準拠し、JSON キー不要で安全に利用可能。
 5. **📝 柔軟なプロンプトカスタマイズ（Full Editor Modal）**
    - システムプロンプトを設定画面からフル編集可能。専門ドメイン（医療、法律、特定技術など）や英語メインの Vault にも即座に適応可能（初期値へのワンクリックリセット対応）。
@@ -26,13 +28,7 @@
 
 ## 🚀 クイックスタート (Installation & Setup)
 
-### 1. 前提条件
-- **ripgrep (`rg`)**: システムの `PATH` に `rg` コマンドが通っている必要があります。
-  - Windows: `winget install BurntSushi.ripgrep.MSVC` または `choco install ripgrep`
-  - macOS: `brew install ripgrep`
-  - Linux: `sudo apt install ripgrep`
-
-### 2. プラグインのインストール
+### 1. プラグインのインストール
 1. `obsidian-smart-search` フォルダを、Vault の `.obsidian/plugins/` ディレクトリに配置します。
 2. Obsidian の「設定」➔「コミュニティプラグイン」を開き、**Smart Search** を有効化（ON）にします。
 3. リロード（`Ctrl + R` / `Cmd + R`）するか、右サイドバーのリボンアイコン（✨）をクリックしてパネルを開きます。

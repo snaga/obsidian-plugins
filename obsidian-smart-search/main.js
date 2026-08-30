@@ -92,7 +92,6 @@
 // =========================================================================
 
 const { Plugin, ItemView, WorkspaceLeaf, setTooltip, setIcon, Notice, PluginSettingTab, Setting, FileSystemAdapter, requestUrl, Modal, SecretComponent } = require('obsidian');
-const cp = require('child_process');
 
 const VIEW_TYPE_SMART_SEARCH = 'smart-search-view';
 
@@ -546,13 +545,13 @@ class SmartSearchView extends ItemView {
             this.renderView();
 
             try {
-                const results = await this.executeRipgrepSearch(keywords, null);
+                const results = await this.executeInternalSearch(keywords, null);
                 this.isLoading = false;
                 this.results = results;
                 this.renderView();
-            } catch (rgErr) {
+            } catch (err) {
                 this.isLoading = false;
-                this.lastError = `Ripgrep search error: ${rgErr.message}`;
+                this.lastError = `Search error: ${err.message}`;
                 this.renderView();
             }
         } else {
@@ -562,117 +561,108 @@ class SmartSearchView extends ItemView {
         }
     }
 
-    // 🔍 ripgrep を使った高速な全文検索スコアリング
-    async executeRipgrepSearch(keywords, currentFile) {
-        const vaultBasePath = this.getVaultBasePath();
-        const currentNormalized = currentFile ? currentFile.path.replace(/\\/g, '/').toLowerCase() : '';
+    // 🔍 Obsidian 内部機能 (cachedRead / インメモリ) を使った高速な全文検索スコアリング
+    async executeInternalSearch(keywords, currentFile) {
+        if (!keywords || keywords.length === 0) {
+            return [];
+        }
 
-        return new Promise((resolve) => {
-            const fileMatches = new Map();
+        const files = this.app.vault.getMarkdownFiles();
+        const currentPath = currentFile ? currentFile.path : '';
+        const totalKeywords = keywords.length;
+        const lowerKeywords = keywords.map(kw => kw.toLowerCase());
 
-            let completed = 0;
-            if (!keywords || keywords.length === 0) {
-                return resolve([]);
+        const resultsArray = [];
+
+        for (const file of files) {
+            if (currentPath && file.path === currentPath) {
+                continue;
             }
 
-            keywords.forEach((kw) => {
-                const rgArgs = ['-i', '-n', '--max-count', '3', '-g', '*.md', kw, '.'];
-                const proc = cp.spawn('rg', rgArgs, {
-                    cwd: vaultBasePath,
-                    windowsHide: true
-                });
+            // 隠しフォルダ・ドットフォルダを除外
+            if (file.path.startsWith('.') || file.path.includes('/.')) {
+                continue;
+            }
 
-                let stdout = '';
-                proc.stdout.on('data', d => stdout += d.toString('utf-8'));
-                proc.on('close', () => {
-                    const lines = stdout.split('\n');
-                    for (const line of lines) {
-                        if (!line.trim()) continue;
-                        const parts = line.split(':');
-                        if (parts.length >= 3) {
-                            let rawPath = parts[0].replace(/\\/g, '/').trim();
-                            if (rawPath.startsWith('./')) {
-                                rawPath = rawPath.substring(2);
-                            }
-                            const lineNum = parts[1];
-                            const snippet = parts.slice(2).join(':').trim();
+            let content = '';
+            try {
+                content = await this.app.vault.cachedRead(file);
+            } catch (err) {
+                continue;
+            }
 
-                            const normPath = rawPath.toLowerCase();
-                            if (currentNormalized && (normPath === currentNormalized || normPath === ('obsidianvault/' + currentNormalized))) {
-                                continue;
-                            }
-                            if (normPath.includes('/.') || normPath.startsWith('.')) {
-                                continue;
-                            }
+            const contentLower = content.toLowerCase();
+            const fileName = file.name || (file.path.split('/').pop() || '');
+            const fileNameLower = fileName.toLowerCase();
 
-                            if (!fileMatches.has(rawPath)) {
-                                fileMatches.set(rawPath, {
-                                    source_path: rawPath,
-                                    matchedKeywords: new Set(),
-                                    count: 0,
-                                    topSnippet: snippet
-                                });
-                            }
-                            const entry = fileMatches.get(rawPath);
-                            entry.matchedKeywords.add(kw);
-                            entry.count += 1;
-                        }
+            const matchedKeywords = new Set();
+            let totalMatchCount = 0;
+            let firstSnippet = '';
+
+            for (let i = 0; i < totalKeywords; i++) {
+                const kw = keywords[i];
+                const kwLower = lowerKeywords[i];
+
+                let kwMatchCount = 0;
+                let pos = contentLower.indexOf(kwLower);
+                while (pos !== -1 && kwMatchCount < 3) {
+                    kwMatchCount++;
+                    if (!firstSnippet) {
+                        const start = Math.max(0, pos - 40);
+                        const end = Math.min(content.length, pos + kwLower.length + 60);
+                        firstSnippet = content.substring(start, end).replace(/\r?\n/g, ' ').trim();
                     }
+                    pos = contentLower.indexOf(kwLower, pos + kwLower.length);
+                }
 
-                    completed++;
-                    if (completed === keywords.length) {
-                        const totalKeywords = keywords.length;
-                        const resultsArray = Array.from(fileMatches.values()).map(item => {
-                            const fileName = (item.source_path.split('/').pop() || '').toLowerCase();
-                            
-                            // 1. タイトル一致ボーナス
-                            let titleMatchCount = 0;
-                            keywords.forEach(kw => {
-                                if (fileName.includes(kw.toLowerCase())) {
-                                    titleMatchCount++;
-                                }
-                            });
+                // タイトルにキーワードが含まれる場合もマッチとしてカウント
+                const inTitle = fileNameLower.includes(kwLower);
+                if (kwMatchCount > 0 || inTitle) {
+                    matchedKeywords.add(kw);
+                    totalMatchCount += kwMatchCount + (inTitle ? 1 : 0);
+                }
+            }
 
-                            // 2. スコア比率: 多様性 60% + タイトル 25% + 頻度 15%
-                            const diversityRatio = item.matchedKeywords.size / totalKeywords;
-                            const titleBonus = Math.min(1.0, titleMatchCount * 0.4);
-                            const frequencyScore = Math.min(1.0, item.count / 10);
+            if (matchedKeywords.size === 0) {
+                continue;
+            }
 
-                            const finalScore = (diversityRatio * 0.60) + (titleBonus * 0.25) + (frequencyScore * 0.15);
+            // 1. タイトル一致ボーナス判定
+            let titleMatchCount = 0;
+            for (let i = 0; i < totalKeywords; i++) {
+                if (fileNameLower.includes(lowerKeywords[i])) {
+                    titleMatchCount++;
+                }
+            }
 
-                            let matchBreadcrumbs = `Matched ${item.matchedKeywords.size}/${totalKeywords} terms: ${Array.from(item.matchedKeywords).join(', ')}`;
-                            if (titleMatchCount > 0) {
-                                matchBreadcrumbs = `🎯 Title Match (${titleMatchCount}) • ` + matchBreadcrumbs;
-                            }
+            // 2. スコア比率: 多様性 60% + タイトル 25% + 頻度 15%
+            const diversityRatio = matchedKeywords.size / totalKeywords;
+            const titleBonus = Math.min(1.0, titleMatchCount * 0.4);
+            const frequencyScore = Math.min(1.0, totalMatchCount / 10);
+            const finalScore = (diversityRatio * 0.60) + (titleBonus * 0.25) + (frequencyScore * 0.15);
 
-                            return {
-                                source_path: item.source_path,
-                                final_score: Math.min(1.0, finalScore),
-                                matching_chunks_count: item.count,
-                                title_match_count: titleMatchCount,
-                                top_chunk_breadcrumbs: matchBreadcrumbs,
-                                top_chunk_content: item.topSnippet
-                            };
-                        });
+            let matchBreadcrumbs = `Matched ${matchedKeywords.size}/${totalKeywords} terms: ${Array.from(matchedKeywords).join(', ')}`;
+            if (titleMatchCount > 0) {
+                matchBreadcrumbs = `🎯 Title Match (${titleMatchCount}) • ` + matchBreadcrumbs;
+            }
 
-                        resultsArray.sort((a, b) => 
-                            b.final_score - a.final_score || 
-                            b.title_match_count - a.title_match_count || 
-                            b.matching_chunks_count - a.matching_chunks_count
-                        );
-                        resolve(resultsArray.slice(0, this.plugin.settings.limit || 20));
-                    }
-                });
-
-                proc.on('error', (err) => {
-                    console.warn(`ripgrep execution failed for ${kw}:`, err);
-                    completed++;
-                    if (completed === keywords.length) {
-                        resolve([]);
-                    }
-                });
+            resultsArray.push({
+                source_path: file.path,
+                final_score: Math.min(1.0, finalScore),
+                matching_chunks_count: totalMatchCount,
+                title_match_count: titleMatchCount,
+                top_chunk_breadcrumbs: matchBreadcrumbs,
+                top_chunk_content: firstSnippet || fileName
             });
-        });
+        }
+
+        resultsArray.sort((a, b) => 
+            b.final_score - a.final_score || 
+            b.title_match_count - a.title_match_count || 
+            b.matching_chunks_count - a.matching_chunks_count
+        );
+
+        return resultsArray.slice(0, this.plugin.settings.limit || 20);
     }
 
     async fetchSimilarNotes(file, force = false) {
@@ -719,13 +709,13 @@ class SmartSearchView extends ItemView {
             this.renderView();
 
             try {
-                const results = await this.executeRipgrepSearch(keywords, file);
+                const results = await this.executeInternalSearch(keywords, file);
                 this.isLoading = false;
                 this.results = results;
                 this.renderView();
-            } catch (rgErr) {
+            } catch (err) {
                 this.isLoading = false;
-                this.lastError = `Ripgrep search error: ${rgErr.message}`;
+                this.lastError = `Search error: ${err.message}`;
                 this.renderView();
             }
         } else {
