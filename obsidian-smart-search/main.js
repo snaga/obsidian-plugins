@@ -91,7 +91,7 @@
 //   }
 // =========================================================================
 
-const { Plugin, ItemView, WorkspaceLeaf, setTooltip, setIcon, Notice, PluginSettingTab, Setting, FileSystemAdapter, requestUrl, Modal } = require('obsidian');
+const { Plugin, ItemView, WorkspaceLeaf, setTooltip, setIcon, Notice, PluginSettingTab, Setting, FileSystemAdapter, requestUrl, Modal, SecretComponent } = require('obsidian');
 const cp = require('child_process');
 
 const VIEW_TYPE_SMART_SEARCH = 'smart-search-view';
@@ -419,8 +419,18 @@ class SmartSearchView extends ItemView {
     // ==========================================
     async callGeminiAIStudio(prompt, fallback) {
         const s = this.plugin.settings;
-        if (!s.geminiApiKey || s.geminiApiKey.trim() === '') {
-            throw new Error('Gemini API key is not configured. Please set it in plugin settings.');
+        let apiKey = s.geminiApiKey ? s.geminiApiKey.trim() : '';
+
+        // 🔒 Obsidian SecretStorage から安全にキーを解決
+        if (apiKey && this.app.secretStorage) {
+            const resolvedSecret = this.app.secretStorage.getSecret(apiKey);
+            if (resolvedSecret) {
+                apiKey = resolvedSecret.trim();
+            }
+        }
+
+        if (!apiKey) {
+            throw new Error('Gemini API key is not configured or secret is empty. Please check plugin settings.');
         }
 
         // 🌐 Gemini AI Studio Interactions Endpoint
@@ -428,7 +438,7 @@ class SmartSearchView extends ItemView {
         
         // 🔒 API Key Header
         const headers = {
-            'x-goog-api-key': s.geminiApiKey.trim(),
+            'x-goog-api-key': apiKey,
             'Content-Type': 'application/json'
         };
 
@@ -1027,13 +1037,12 @@ class SmartSearchSettingTab extends PluginSettingTab {
 
             new Setting(containerEl)
                 .setName('Gemini API Key')
-                .setDesc('API key for Google Gemini AI Studio.')
-                .addText((text) =>
-                    text
-                        .setPlaceholder('AIzaSy...')
+                .setDesc('Obsidian SecretStorage から Gemini API キー（AI Studio）を選択または登録してください。Vault内に平文保存されず安全に保護されます。')
+                .addComponent((el) =>
+                    new SecretComponent(this.app, el)
                         .setValue(this.plugin.settings.geminiApiKey || '')
                         .onChange(async (val) => {
-                            this.plugin.settings.geminiApiKey = val.trim();
+                            this.plugin.settings.geminiApiKey = val ? val.trim() : '';
                             await this.plugin.saveSettings();
                         })
                 );
