@@ -92,6 +92,7 @@
 // =========================================================================
 
 const { Plugin, ItemView, WorkspaceLeaf, setTooltip, setIcon, Notice, PluginSettingTab, Setting, FileSystemAdapter, requestUrl, Modal, SecretComponent } = require('obsidian');
+const cp = require('child_process');
 
 const VIEW_TYPE_SMART_SEARCH = 'smart-search-view';
 
@@ -127,7 +128,7 @@ const DEFAULT_SETTINGS = {
     geminiApiKey: '',
     geminiModel: 'gemini-3.5-flash-lite',
     vertexProjectId: '',
-    vertexModel: 'gemini-1.5-flash',
+    vertexModel: 'gemini-3.5-flash-lite',
     promptTemplate: '',
     limit: 20,
     autoRefresh: true,
@@ -266,13 +267,16 @@ class SmartSearchView extends ItemView {
     // 🔑 Google Cloud ADC / gcloud からアクセストークンを自動取得
     async getGcloudAccessToken() {
         return new Promise((resolve, reject) => {
+            const isWin = process.platform === 'win32';
+            const gcloudBin = isWin ? 'gcloud.cmd' : 'gcloud';
+
             // 1. application-default (サービスアカウント偽装が反映される)
-            cp.exec('gcloud auth application-default print-access-token', { windowsHide: true }, (err, stdout) => {
+            cp.exec(`${gcloudBin} auth application-default print-access-token`, { windowsHide: true }, (err, stdout) => {
                 if (!err && stdout && stdout.trim()) {
                     return resolve(stdout.trim());
                 }
                 // 2. フォールバック: 標準 gcloud auth
-                cp.exec('gcloud auth print-access-token', { windowsHide: true }, (err2, stdout2) => {
+                cp.exec(`${gcloudBin} auth print-access-token`, { windowsHide: true }, (err2, stdout2) => {
                     if (!err2 && stdout2 && stdout2.trim()) {
                         return resolve(stdout2.trim());
                     }
