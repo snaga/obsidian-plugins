@@ -669,8 +669,9 @@ class SmartSearchView extends ItemView {
         const s = this.plugin.settings;
         if (!s.queryCache) s.queryCache = {};
 
-        const cacheKey = file.path;
-        const fileMtime = file.stat ? file.stat.mtime : 0;
+        const cacheKey = file.path.replace(/\\/g, '/');
+        const fileMtime = file.stat ? (file.stat.mtime || 0) : 0;
+        const fileSize = file.stat ? (file.stat.size || 0) : 0;
 
         this.isLoading = true;
         this.lastError = null;
@@ -679,8 +680,30 @@ class SmartSearchView extends ItemView {
         this.isFromCache = false;
 
         let keywords = null;
-        if (!force && s.queryCache[cacheKey] && s.queryCache[cacheKey].mtime === fileMtime && s.queryCache[cacheKey].keywords) {
-            keywords = s.queryCache[cacheKey].keywords;
+        const cachedEntry = s.queryCache[cacheKey];
+
+        // 📱 モバイル・同期対応の堅牢なキャッシュ判定ロジック
+        let isCacheValid = false;
+        if (!force && cachedEntry && Array.isArray(cachedEntry.keywords) && cachedEntry.keywords.length > 0) {
+            if (fileMtime > 0 && cachedEntry.mtime > 0) {
+                // mtime が完全一致、または同期による微小ズレ (3秒以内)
+                const mtimeDiff = Math.abs(cachedEntry.mtime - fileMtime);
+                if (mtimeDiff <= 3000) {
+                    isCacheValid = true;
+                } else if (fileSize > 0 && cachedEntry.size > 0 && cachedEntry.size === fileSize) {
+                    // mtime がズレていてもファイルサイズが完全に一致していれば有効とみなす
+                    isCacheValid = true;
+                }
+            } else if (fileSize > 0 && cachedEntry.size > 0 && cachedEntry.size === fileSize) {
+                isCacheValid = true;
+            } else if (cachedEntry.keywords) {
+                // stat が取得できないモバイル環境のセーフティフォールバック
+                isCacheValid = true;
+            }
+        }
+
+        if (isCacheValid) {
+            keywords = cachedEntry.keywords;
             this.isFromCache = true;
         } else {
             const providerName = (s.provider === 'vertex-ai') ? 'Vertex AI' : 'Gemini';
@@ -690,6 +713,7 @@ class SmartSearchView extends ItemView {
                 keywords = await this.generateQueryKeywords(file);
                 s.queryCache[cacheKey] = {
                     mtime: fileMtime,
+                    size: fileSize,
                     keywords: keywords,
                     updatedAt: Date.now()
                 };
@@ -1242,7 +1266,7 @@ module.exports = class SmartSearchPlugin extends Plugin {
             const view = leaf.view;
             if (view instanceof SmartSearchView) {
                 const active = this.app.workspace.getActiveFile();
-                if (active) view.updateForFile(active, true);
+                if (active) view.updateForFile(active, false);
             }
         }
     }
