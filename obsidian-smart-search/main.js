@@ -576,7 +576,7 @@ class SmartSearchView extends ItemView {
             }
 
             keywords.forEach((kw) => {
-                const rgArgs = ['-i', '-n', '--max-count', '3', kw, '.'];
+                const rgArgs = ['-i', '-n', '--max-count', '3', '-g', '*.md', kw, '.'];
                 const proc = cp.spawn('rg', rgArgs, {
                     cwd: vaultBasePath,
                     windowsHide: true
