@@ -297,16 +297,35 @@ class SmartSearchView extends ItemView {
         const s = this.plugin.settings;
         const noteTitle = file.basename || file.name;
         let noteSummarySnippet = '';
+        let noteHeadingsStr = '';
         try {
             const content = await this.app.vault.cachedRead(file);
-            const lines = content.split('\n').filter(l => l.trim() && !l.startsWith('---') && !l.startsWith('#')).slice(0, 12);
-            noteSummarySnippet = lines.join(' ').substring(0, 300);
+            const lines = content.split('\n');
+            
+            // 主要見出し (#, ##, ###) の抽出 (最大15個)
+            const headings = lines
+                .map(l => l.trim())
+                .filter(l => /^#{1,3}\s+/.test(l))
+                .slice(0, 15);
+            if (headings.length > 0) {
+                noteHeadingsStr = headings.join('\n');
+            }
+
+            // 本文冒頭抜粋 (YAMLフロントマターや見出しを除去した冒頭文章)
+            const bodyLines = lines.filter(l => l.trim() && !l.startsWith('---') && !l.startsWith('#')).slice(0, 12);
+            noteSummarySnippet = bodyLines.join(' ').substring(0, 300);
         } catch (e) {
             // ignore
         }
 
         const template = (s.promptTemplate && s.promptTemplate.trim()) ? s.promptTemplate : DEFAULT_UNIFIED_PROMPT;
-        const inputText = `ノートタイトル: "${noteTitle}"\n${noteSummarySnippet ? `ノート冒頭抜粋:\n${noteSummarySnippet}` : ''}`;
+        let inputText = `ノートタイトル: "${noteTitle}"`;
+        if (noteHeadingsStr) {
+            inputText += `\nノート主要見出し階層:\n${noteHeadingsStr}`;
+        }
+        if (noteSummarySnippet) {
+            inputText += `\nノート冒頭抜粋:\n${noteSummarySnippet}`;
+        }
         const prompt = template.replace(/\{\{input\}\}/g, inputText);
 
         return await this.callLLMForKeywords(prompt, noteTitle);
