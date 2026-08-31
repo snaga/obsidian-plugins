@@ -91,7 +91,7 @@
 //   }
 // =========================================================================
 
-const { Plugin, ItemView, WorkspaceLeaf, setTooltip, setIcon, Notice, PluginSettingTab, Setting, FileSystemAdapter, requestUrl, Modal, SecretComponent } = require('obsidian');
+const { Plugin, ItemView, WorkspaceLeaf, setTooltip, setIcon, Notice, PluginSettingTab, Setting, FileSystemAdapter, requestUrl, Modal, SecretComponent, Platform } = require('obsidian');
 const cp = require('child_process');
 
 const VIEW_TYPE_SMART_SEARCH = 'smart-search-view';
@@ -565,7 +565,7 @@ class SmartSearchView extends ItemView {
         }
     }
 
-    // 🔍 Obsidian 内部機能 (cachedRead / インメモリ) を使った高速な全文検索スコアリング
+    // 🔍 Obsidian 内部機能を使った全文検索スコアリング
     async executeInternalSearch(keywords, currentFile) {
         if (!keywords || keywords.length === 0) {
             return [];
@@ -578,6 +578,9 @@ class SmartSearchView extends ItemView {
 
         const resultsArray = [];
 
+        // 📱 Android限定: インメモリ・テキストキャッシュの利用フラグ
+        const isAndroidCacheAvailable = Platform.isAndroidApp && this.plugin.androidTextCache;
+
         for (const file of files) {
             if (currentPath && file.path === currentPath) {
                 continue;
@@ -589,13 +592,31 @@ class SmartSearchView extends ItemView {
             }
 
             let content = '';
-            try {
-                content = await this.app.vault.cachedRead(file);
-            } catch (err) {
-                continue;
+            let contentLower = '';
+
+            // 📱 Android 高速インメモリパス (await ゼロ)
+            if (isAndroidCacheAvailable && this.plugin.androidTextCache.has(file.path)) {
+                const cached = this.plugin.androidTextCache.get(file.path);
+                contentLower = cached.lowerContent;
+                content = contentLower; // スニペット用
+            } else {
+                // 🍎 iOS / 💻 Desktop / キャッシュ未生成ファイルの通常パス
+                try {
+                    content = await this.app.vault.cachedRead(file);
+                } catch (err) {
+                    continue;
+                }
+                contentLower = content.toLowerCase();
+
+                // 📱 Androidでウォームアップ未完了のファイルを読んだ場合は即座にキャッシュに反映
+                if (isAndroidCacheAvailable) {
+                    this.plugin.androidTextCache.set(file.path, {
+                        lowerContent: contentLower,
+                        mtime: file.stat ? file.stat.mtime : 0
+                    });
+                }
             }
 
-            const contentLower = content.toLowerCase();
             const fileName = file.name || (file.path.split('/').pop() || '');
             const fileNameLower = fileName.toLowerCase();
 
@@ -992,7 +1013,19 @@ class SmartSearchSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Smart Search 設定' });
+        const headerEl = containerEl.createEl('h2', { text: 'Smart Search 設定' });
+        headerEl.style.marginBottom = '2px';
+
+        const poweredByEl = containerEl.createEl('div', { 
+            text: 'Powered by Gemini', 
+            cls: 'setting-item-description' 
+        });
+        poweredByEl.style.textAlign = 'right';
+        poweredByEl.style.fontSize = '12px';
+        poweredByEl.style.fontWeight = '500';
+        poweredByEl.style.color = 'var(--text-accent)';
+        poweredByEl.style.marginTop = '-4px';
+        poweredByEl.style.marginBottom = '16px';
 
         // ===== 🌐 Provider Selection =====
         new Setting(containerEl)
@@ -1175,6 +1208,51 @@ module.exports = class SmartSearchPlugin extends Plugin {
         await this.loadSettings();
 
         this.debounceTimer = null;
+        this._isUnloaded = false;
+
+        // 📱 Android限定: インメモリ・テキストキャッシュの初期化
+        if (Platform.isAndroidApp) {
+            this.androidTextCache = new Map(); // path -> { lowerContent, mtime }
+
+            // 差分同期イベント登録
+            this.registerEvent(
+                this.app.vault.on('modify', async (file) => {
+                    if (file && file.extension === 'md' && this.androidTextCache) {
+                        try {
+                            const content = await this.app.vault.cachedRead(file);
+                            this.androidTextCache.set(file.path, {
+                                lowerContent: content.toLowerCase(),
+                                mtime: file.stat ? file.stat.mtime : 0
+                            });
+                        } catch (e) {
+                            // ignore
+                        }
+                    }
+                })
+            );
+            this.registerEvent(
+                this.app.vault.on('delete', (file) => {
+                    if (file && file.extension === 'md' && this.androidTextCache) {
+                        this.androidTextCache.delete(file.path);
+                    }
+                })
+            );
+            this.registerEvent(
+                this.app.vault.on('rename', (file, oldPath) => {
+                    if (this.androidTextCache) {
+                        this.androidTextCache.delete(oldPath);
+                        if (file && file.extension === 'md') {
+                            this.app.vault.cachedRead(file).then(content => {
+                                this.androidTextCache.set(file.path, {
+                                    lowerContent: content.toLowerCase(),
+                                    mtime: file.stat ? file.stat.mtime : 0
+                                });
+                            }).catch(() => {});
+                        }
+                    }
+                })
+            );
+        }
 
         this.registerView(VIEW_TYPE_SMART_SEARCH, (leaf) => new SmartSearchView(leaf, this));
 
@@ -1225,12 +1303,56 @@ module.exports = class SmartSearchPlugin extends Plugin {
 
         this.app.workspace.onLayoutReady(() => {
             this.initView();
+            // 📱 Android限定: 起動直後のCPU負荷を避けてゆるやかにウォームアップ
+            if (Platform.isAndroidApp) {
+                this.warmupAndroidCacheGentle();
+            }
         });
     }
 
     async onunload() {
         console.log('Unloading Similar Notes Plugin');
+        this._isUnloaded = true;
+        if (this.androidTextCache) {
+            this.androidTextCache.clear();
+            this.androidTextCache = null;
+        }
         this.app.workspace.detachLeavesOfType(VIEW_TYPE_SMART_SEARCH);
+    }
+
+    // 📱 Android限定: CPU・バッテリー負荷を抑えた段階的ウォームアップ
+    async warmupAndroidCacheGentle() {
+        // 1. 起動直後の重いレイアウト・プラグイン初期化を避けて3.5秒待機
+        await new Promise(resolve => setTimeout(resolve, 3500));
+        if (this._isUnloaded || !this.androidTextCache) return;
+
+        const files = this.app.vault.getMarkdownFiles();
+        const batchSize = 20; // 1バッチ20ファイル（数ミリ秒）
+        const intervalMs = 80; // バッチ間の休憩時間 (80ms) でCPUを解放
+
+        for (let i = 0; i < files.length; i += batchSize) {
+            if (this._isUnloaded || !this.androidTextCache) return;
+
+            const batch = files.slice(i, i + batchSize);
+            await Promise.all(batch.map(async (file) => {
+                try {
+                    // 既にキャッシュされていればスキップ
+                    if (this.androidTextCache.has(file.path)) return;
+                    const content = await this.app.vault.cachedRead(file);
+                    this.androidTextCache.set(file.path, {
+                        lowerContent: content.toLowerCase(),
+                        mtime: file.stat ? file.stat.mtime : 0
+                    });
+                } catch (e) {
+                    // ignore
+                }
+            }));
+
+            // ☕ UIスレッドを解放してアイドル状態を確保
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+
+        console.log(`[Smart Search] Android gentle warmup complete: ${this.androidTextCache.size} files in memory.`);
     }
 
     getView() {

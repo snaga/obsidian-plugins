@@ -1,7 +1,7 @@
 # 🔍 Smart Search for Obsidian
 
-> **AI Query Expansion + Zero-Dependency In-Memory Vault Search**  
-> 自然言語クエリや開いているノートから、LLMが「本質的なキーワード」を多角的に展開し、Obsidian 内部キャッシュ（`cachedRead`）を活用したインメモリ走査で最適なノートを爆速発見するObsidianプラグイン（デスクトップ・モバイル完全対応）。
+> **AI Query Expansion + Zero-Dependency In-Memory Vault Search (v1.0.1)**  
+> 自然言語クエリや開いているノートから、LLM（Gemini）が「本質的なキーワード」を多角的に展開し、Obsidian 内部キャッシュ（`cachedRead`）を活用したインメモリ走査で最適なノートを爆速発見するObsidianプラグイン（デスクトップ・モバイル完全対応）。
 
 ---
 
@@ -10,15 +10,16 @@
 1. **🧠 AI クエリ拡張（Query Expansion / Query Rewriting）**
    - ユーザーの曖昧な質問や検索キーワードから、LLM（Gemini）が「固有名詞」「ビジネス課題」「技術用語」「同義語・表記揺れ」の4視点で8〜12個のキーワードを自動生成。
    - 長い複合語（例:「人材マネジメント」➔ `["人材", "マネジメント", ...]`）を核となる単語に分解し、文章中で離れて同居（Co-occurrence）している関連ノートも確実に取りこぼさずヒットさせます。
-2. **⚡ ゼロ依存・超高速インメモリ全文検索（Obsidian `cachedRead` ネイティブ）**
+2. **⚡ ゼロ依存・超高速インメモリ全文検索（Obsidian `cachedRead` ネイティブ ＆ Android 高速化）**
    - 外部 CLI（ripgrep など）のインストールは一切不要！
    - Obsidian の内部メモリキャッシュ（`cachedRead`）を活用した純粋な JavaScript/TypeScript インメモリ走査により、数千ノート規模の Vault でも **わずか 30〜50ミリ秒** で爆速スコアリング。
-   - **iOS / iPadOS / Android のモバイル環境でもデスクトップと全く同様に完全動作** します。
+   - **iOS / iPadOS / Android / Desktop のマルチプラットフォーム完全対応**。
+   - **📱 Android 最適化（v1.0.1）**: Android 特有のファイル I/O（Scoped Storage）遅延を解消するため、プラグイン起動時にバックグラウンドで段階的にメモリを温める **「ゆるゆるウォームアップ（Gentle Warmup）」** 機構を搭載。UI のカクつきやバッテリー消費を抑えつつ、初回検索から常時爆速（完全同期インメモリ走査）を実現。
 3. **📊 マルチファクター・スコアリング（Multi-Factor Scoring）**
    - 単なる単語の連呼（TF）に偏らず、**キーワード網羅性（多様性 60%）＋ タイトル完全一致ボーナス（25%）＋ 出現頻度（15%）** を統合した独自のアルゴリズムで、人間の直感に極めて近い高精度なランキングを実現。
 4. **🔒 安全な SecretStorage 管理 ＆ 企業（エンタープライズ）両対応のハイブリッド設計**
    - **個人・開発環境 / モバイル**: Google AI Studio の API キーを、Obsidian 公式の **SecretStorage（OS のキーチェーン / セキュアストレージ）** で安全に管理。Vault のファイル（`data.json`）に平文で保存されないため、Git リモートへの誤コミットや情報漏洩を完全に防止。
-   - **会社・本番環境**: Google Cloud Vertex AI（ADC / キーレス サービスアカウント）に対応。社内セキュリティポリシーに準拠し、JSON キー不要で安全に利用可能。
+   - **会社・本番環境**: Google Cloud Vertex AI（ADC / キーレス サービスアカウント）に対応。社内セキュリティポリシーに準拠し、JSON キー不要で安全に利用可能。Windows 環境の `gcloud.cmd` 実行にも完全対応。
 5. **📝 柔軟なプロンプトカスタマイズ（Full Editor Modal）**
    - システムプロンプトを設定画面からフル編集可能。専門ドメイン（医療、法律、特定技術など）や英語メインの Vault にも即座に適応可能（初期値へのワンクリックリセット対応）。
 6. **🔍 インタラクティブ自由検索バー**
@@ -45,7 +46,7 @@ Obsidian の **「設定」➔「Smart Search」** から設定を行います�
   - **Gemini モデル**: `gemini-3.5-flash-lite`（デフォルト）など。
 - **Google Cloud Vertex AI（ADC / キーレス サービスアカウント - 企業環境）**
   - **GCP プロジェクト ID**: Google Cloud のプロジェクト ID を入力。
-  - **Vertex モデル ID**: `gemini-1.5-flash` または `gemini-3.5-flash-lite`（デフォルト）など。
+  - **Vertex モデル ID**: `gemini-3.5-flash-lite`（デフォルト）など。
   - *※ 端末側で `gcloud auth application-default login` が完了していれば、API キーなしで自動認証されます。*
 
 ### 📝 システムプロンプト設定
@@ -97,9 +98,9 @@ Obsidian の **「設定」➔「Smart Search」** から設定を行います�
 
 ```mermaid
 graph TD
-    A["入力 (アクティブノート / 検索クエリ)"] --> B["LLM (Gemini / Vertex AI)"]
+    A["入力 (アクティブノート / 検索クエリ)"] --> B["LLM (Gemini 3.5 Flash Lite)"]
     B -->|"4カテゴリ展開 + 複合語分解"| C["検索キーワード群 (8〜12語)"]
-    C --> D["高速全文検索エンジン (ripgrep)"]
+    C --> D["高速インメモリ検索エンジン<br>(Android: 段階的ウォームアップ同期走査<br>iOS/Desktop: cachedRead)"]
     D --> E["マルチファクター・スコアリング<br>(多様性60% + タイトル25% + 頻度15%)"]
     E --> F["サイドバー UI (Smart Search View)"]
 ```
