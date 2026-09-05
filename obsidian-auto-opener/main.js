@@ -103,7 +103,6 @@ module.exports = class AutoOpenerPlugin extends Plugin {
                     const file = this.app.vault.getAbstractFileByPath(normalizedPath);
 
                     if (file && file instanceof TFile) {
-                        this.app.workspace.ensureSideLeaf();
                         const leaf = this.app.workspace.getLeaf(newtab ? 'tab' : false);
                         leaf.openFile(file, { active: true });
 
