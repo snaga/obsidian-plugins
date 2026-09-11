@@ -1,0 +1,79 @@
+/* [Easy Styler] Stepper UI Styles */
+.easy-styler-setting-row {
+    transition: all 0.2s ease;
+}
+
+.easy-styler-stepper-control {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin-left: 8px !important;
+}
+
+.easy-styler-stepper-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    border-radius: var(--radius-s) !important;
+    cursor: pointer !important;
+    background: var(--interactive-normal) !important;
+    border: 1px solid var(--background-modifier-border) !important;
+    color: var(--text-normal) !important;
+    font-size: 11px !important;
+    font-weight: bold !important;
+    line-height: 1 !important;
+    user-select: none !important;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.easy-styler-stepper-btn:hover:not(:disabled) {
+    background: var(--interactive-hover) !important;
+    border-color: var(--text-accent) !important;
+    color: var(--text-accent) !important;
+}
+
+.easy-styler-stepper-btn:active:not(:disabled) {
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent) !important;
+}
+
+.easy-styler-stepper-btn:disabled {
+    opacity: 0.3 !important;
+    cursor: not-allowed !important;
+}
+
+.easy-styler-stepper-input {
+    width: 68px !important;
+    height: 28px !important;
+    text-align: center !important;
+    font-weight: 600 !important;
+    font-size: 0.9em !important;
+    font-variant-numeric: tabular-nums !important;
+    padding: 2px 4px !important;
+    border-radius: var(--radius-s) !important;
+    background: var(--background-modifier-form-field) !important;
+    border: 1px solid var(--background-modifier-border) !important;
+    color: var(--text-normal) !important;
+    box-sizing: border-box !important;
+}
+
+.easy-styler-stepper-input:focus {
+    border-color: var(--interactive-accent) !important;
+    outline: none !important;
+}
+
+/* スマホ表示での折り返し調整 */
+@media (max-width: 600px) {
+    .setting-item.easy-styler-setting-row {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
+    }
+    .setting-item.easy-styler-setting-row .setting-item-control {
+        width: 100% !important;
+        justify-content: flex-end !important;
+    }
+}

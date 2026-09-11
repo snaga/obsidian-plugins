@@ -36,11 +36,11 @@ const DEFAULT_SETTINGS = {
 
     // フォントサイズ
     enableFontSize: true,
-    fontSize: 16,               // 11〜32px
+    fontSize: 16,               // 11〜36px
 
     // 行間
     enableLineHeight: true,
-    lineHeight: 1.6,            // 1.1〜2.5
+    lineHeight: 1.6,            // 1.0〜2.5
 
     // フォント設定
     enableFontFamily: false,
@@ -55,7 +55,7 @@ const DEFAULT_SETTINGS = {
 
 module.exports = class EasyStylerPlugin extends Plugin {
     async onload() {
-        console.log('Loading Easy Styler Plugin v1.1.0');
+        console.log('Loading Easy Styler Plugin v1.2.0');
         await this.loadSettings();
 
         // スタイルを即時適用
@@ -204,13 +204,122 @@ class EasyStylerSettingTab extends PluginSettingTab {
         this.plugin = plugin;
     }
 
+    createStepperSetting(opts) {
+        const {
+            name,
+            desc,
+            enableKey,
+            valueKey,
+            min,
+            max,
+            step,
+            defaultValue,
+            unit = 'px',
+            formatDisplay = (v) => `${v}${unit}`,
+            parseInput = (str) => parseFloat(str)
+        } = opts;
+
+        const s = this.plugin.settings;
+        const isEnabled = s[enableKey];
+
+        const setting = new Setting(this.containerEl)
+            .setClass('easy-styler-setting-row')
+            .setName(name)
+            .setDesc(desc);
+
+        // 1. 有効化トグル
+        setting.addToggle(toggle => toggle
+            .setValue(s[enableKey])
+            .setTooltip('このスタイルを有効化')
+            .onChange(async (val) => {
+                s[enableKey] = val;
+                await this.plugin.saveSettings();
+                this.display();
+            })
+        );
+
+        // 2. ステッパーコントロール群 (▽ [input] △)
+        const stepperContainer = setting.controlEl.createDiv({ cls: 'easy-styler-stepper-control' });
+
+        // ▽ (Down / 減らす)
+        const downBtn = stepperContainer.createEl('button', {
+            cls: 'easy-styler-stepper-btn',
+            text: '▽'
+        });
+        downBtn.title = `減らす (-${step}${unit})`;
+        downBtn.disabled = !isEnabled || s[valueKey] <= min;
+
+        // 数値入力ボックス
+        const inputEl = stepperContainer.createEl('input', {
+            type: 'text',
+            cls: 'easy-styler-stepper-input',
+            value: formatDisplay(s[valueKey])
+        });
+        inputEl.disabled = !isEnabled;
+
+        // △ (Up / 増やす)
+        const upBtn = stepperContainer.createEl('button', {
+            cls: 'easy-styler-stepper-btn',
+            text: '△'
+        });
+        upBtn.title = `増やす (+${step}${unit})`;
+        upBtn.disabled = !isEnabled || s[valueKey] >= max;
+
+        // 値更新共通ハンドラ
+        const updateVal = async (newVal) => {
+            let clamped = Math.min(max, Math.max(min, newVal));
+            if (step < 1) {
+                clamped = Math.round(clamped * 100) / 100;
+            }
+            s[valueKey] = clamped;
+            inputEl.value = formatDisplay(clamped);
+            downBtn.disabled = !isEnabled || clamped <= min;
+            upBtn.disabled = !isEnabled || clamped >= max;
+            await this.plugin.saveSettings();
+        };
+
+        downBtn.onclick = async (e) => {
+            e.preventDefault();
+            await updateVal(s[valueKey] - step);
+        };
+
+        upBtn.onclick = async (e) => {
+            e.preventDefault();
+            await updateVal(s[valueKey] + step);
+        };
+
+        inputEl.onchange = async () => {
+            const raw = inputEl.value;
+            const parsed = parseInput(raw);
+            if (!isNaN(parsed)) {
+                await updateVal(parsed);
+            } else {
+                inputEl.value = formatDisplay(s[valueKey]);
+            }
+        };
+
+        // 3. リセットボタン
+        setting.addExtraButton(btn => btn
+            .setIcon('reset')
+            .setTooltip(`デフォルト (${formatDisplay(defaultValue)}) に戻す`)
+            .setDisabled(!isEnabled)
+            .onClick(async () => {
+                s[valueKey] = defaultValue;
+                await this.plugin.saveSettings();
+                this.display();
+            })
+        );
+
+        return setting;
+    }
+
     display() {
         const { containerEl } = this;
         containerEl.empty();
 
         containerEl.createEl('h2', { text: 'Easy Styler 設定' });
         containerEl.createEl('p', {
-            text: 'ノートの余白、フォントサイズ、行間、フォントをリアルタイムにカスタマイズできます。設定を変更すると即座に画面へ反映されます。',
+            text: 'ノートの余白、フォントサイズ、行間、フォントをリアルタイムにカスタマイズできます。△▽ボタンまたは数値の直接入力で調整できます。',
             cls: 'setting-item-description'
         });
 
@@ -220,72 +329,38 @@ class EasyStylerSettingTab extends PluginSettingTab {
         containerEl.createEl('h3', { text: '📐 余白・横幅レイアウト' });
 
         // 最大幅
-        new Setting(containerEl)
-            .setName('ノートの最大横幅 (Max Width)')
-            .setDesc('ノート本文の最大表示幅 (px)。0 に設定すると全幅 (100%) モードになります。')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableWidth)
-                .setTooltip('カスタム横幅を有効化')
-                .onChange(async (val) => {
-                    this.plugin.settings.enableWidth = val;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            )
-            .addSlider(slider => slider
-                .setLimits(0, 2000, 25)
-                .setValue(this.plugin.settings.contentMaxWidth)
-                .setDynamicTooltip()
-                .setDisabled(!this.plugin.settings.enableWidth)
-                .onChange(async (val) => {
-                    this.plugin.settings.contentMaxWidth = val;
-                    await this.plugin.saveSettings();
-                })
-            )
-            .addExtraButton(btn => btn
-                .setIcon('reset')
-                .setTooltip('デフォルト (750px) に戻す')
-                .setDisabled(!this.plugin.settings.enableWidth)
-                .onClick(async () => {
-                    this.plugin.settings.contentMaxWidth = 750;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            );
+        this.createStepperSetting({
+            name: 'ノートの最大横幅 (Max Width)',
+            desc: 'ノート本文の最大表示幅 (px)。0 で全幅 (100%) モード。',
+            enableKey: 'enableWidth',
+            valueKey: 'contentMaxWidth',
+            min: 0,
+            max: 2500,
+            step: 25,
+            defaultValue: 750,
+            unit: 'px',
+            formatDisplay: (v) => (v === 0 ? '全幅' : `${v}px`),
+            parseInput: (str) => {
+                const s = str.trim().toLowerCase();
+                if (s === '0' || s === '全幅' || s === '100%') return 0;
+                return parseFloat(s.replace('px', ''));
+            }
+        });
 
         // 左右パディング
-        new Setting(containerEl)
-            .setName('左右の余白 (Horizontal Padding)')
-            .setDesc('ノート本文の左右の内側余白 (px) を調整します。')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enablePadding)
-                .setTooltip('カスタム左右余白を有効化')
-                .onChange(async (val) => {
-                    this.plugin.settings.enablePadding = val;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            )
-            .addSlider(slider => slider
-                .setLimits(0, 200, 4)
-                .setValue(this.plugin.settings.horizontalPadding)
-                .setDynamicTooltip()
-                .setDisabled(!this.plugin.settings.enablePadding)
-                .onChange(async (val) => {
-                    this.plugin.settings.horizontalPadding = val;
-                    await this.plugin.saveSettings();
-                })
-            )
-            .addExtraButton(btn => btn
-                .setIcon('reset')
-                .setTooltip('デフォルト (32px) に戻す')
-                .setDisabled(!this.plugin.settings.enablePadding)
-                .onClick(async () => {
-                    this.plugin.settings.horizontalPadding = 32;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            );
+        this.createStepperSetting({
+            name: '左右の余白 (Horizontal Padding)',
+            desc: 'ノート本文の左右の内側余白 (px) を調整します。',
+            enableKey: 'enablePadding',
+            valueKey: 'horizontalPadding',
+            min: 0,
+            max: 200,
+            step: 4,
+            defaultValue: 32,
+            unit: 'px',
+            formatDisplay: (v) => `${v}px`,
+            parseInput: (str) => parseFloat(str.replace('px', '').trim())
+        });
 
         // ----------------------------------------------------
         // タイポグラフィ (フォントサイズ・行間)
@@ -293,72 +368,34 @@ class EasyStylerSettingTab extends PluginSettingTab {
         containerEl.createEl('h3', { text: '🔤 文字サイズ・行間' });
 
         // フォントサイズ
-        new Setting(containerEl)
-            .setName('フォントサイズ (Font Size)')
-            .setDesc('本文の文字サイズ (px) を設定します。')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableFontSize)
-                .setTooltip('カスタムフォントサイズを有効化')
-                .onChange(async (val) => {
-                    this.plugin.settings.enableFontSize = val;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            )
-            .addSlider(slider => slider
-                .setLimits(11, 32, 1)
-                .setValue(this.plugin.settings.fontSize)
-                .setDynamicTooltip()
-                .setDisabled(!this.plugin.settings.enableFontSize)
-                .onChange(async (val) => {
-                    this.plugin.settings.fontSize = val;
-                    await this.plugin.saveSettings();
-                })
-            )
-            .addExtraButton(btn => btn
-                .setIcon('reset')
-                .setTooltip('デフォルト (16px) に戻す')
-                .setDisabled(!this.plugin.settings.enableFontSize)
-                .onClick(async () => {
-                    this.plugin.settings.fontSize = 16;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            );
+        this.createStepperSetting({
+            name: 'フォントサイズ (Font Size)',
+            desc: '本文の文字サイズ (px) を設定します。',
+            enableKey: 'enableFontSize',
+            valueKey: 'fontSize',
+            min: 10,
+            max: 36,
+            step: 1,
+            defaultValue: 16,
+            unit: 'px',
+            formatDisplay: (v) => `${v}px`,
+            parseInput: (str) => parseFloat(str.replace('px', '').trim())
+        });
 
         // 行間
-        new Setting(containerEl)
-            .setName('行間 (Line Height)')
-            .setDesc('文章の行間倍率を設定します (例: 1.6)。')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableLineHeight)
-                .setTooltip('カスタム行間を有効化')
-                .onChange(async (val) => {
-                    this.plugin.settings.enableLineHeight = val;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            )
-            .addSlider(slider => slider
-                .setLimits(1.1, 2.5, 0.05)
-                .setValue(this.plugin.settings.lineHeight)
-                .setDynamicTooltip()
-                .setDisabled(!this.plugin.settings.enableLineHeight)
-                .onChange(async (val) => {
-                    this.plugin.settings.lineHeight = Math.round(val * 100) / 100;
-                    await this.plugin.saveSettings();
-                })
-            )
-            .addExtraButton(btn => btn
-                .setIcon('reset')
-                .setTooltip('デフォルト (1.6) に戻す')
-                .setDisabled(!this.plugin.settings.enableLineHeight)
-                .onClick(async () => {
-                    this.plugin.settings.lineHeight = 1.6;
-                    await this.plugin.saveSettings();
-                    this.display();
-                })
-            );
+        this.createStepperSetting({
+            name: '行間 (Line Height)',
+            desc: '文章の行間倍率を設定します (例: 1.60)。',
+            enableKey: 'enableLineHeight',
+            valueKey: 'lineHeight',
+            min: 1.0,
+            max: 2.5,
+            step: 0.05,
+            defaultValue: 1.6,
+            unit: '',
+            formatDisplay: (v) => v.toFixed(2),
+            parseInput: (str) => parseFloat(str.trim())
+        });
 
         // ----------------------------------------------------
         // フォント指定 (プルダウン + 自由入力)
@@ -366,7 +403,7 @@ class EasyStylerSettingTab extends PluginSettingTab {
         containerEl.createEl('h3', { text: '🎨 フォント選択（プルダウン & 直接入力）' });
 
         // 本文フォント
-        const textFontSetting = new Setting(containerEl)
+        new Setting(containerEl)
             .setName('本文フォント (Text Font)')
             .setDesc('プルダウンから定番フォントを選択、またはカスタムで直接入力できます。')
             .addToggle(toggle => toggle
@@ -407,7 +444,7 @@ class EasyStylerSettingTab extends PluginSettingTab {
         }
 
         // 等幅コードフォント
-        const monoFontSetting = new Setting(containerEl)
+        new Setting(containerEl)
             .setName('等幅コードフォント (Monospace Font)')
             .setDesc('コードブロック等で使用する等幅フォントを選択します。')
             .addToggle(toggle => toggle
