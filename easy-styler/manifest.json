@@ -1,0 +1,9 @@
+{
+  "id": "easy-styler",
+  "name": "Easy Styler",
+  "version": "1.1.0",
+  "minAppVersion": "0.15.0",
+  "description": "Easily customize editor margins, font size, line height, and fonts in real-time with font dropdown presets and mobile support.",
+  "author": "Satoshi Nagayasu",
+  "isDesktopOnly": false
+}
