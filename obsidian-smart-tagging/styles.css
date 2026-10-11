@@ -1,0 +1,191 @@
+/* Smart Tagging Styles */
+
+.st-modal-container {
+  padding: 16px;
+  max-width: 650px;
+}
+
+.st-modal-title {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 1.3em;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.st-file-info {
+  background-color: var(--background-secondary);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.st-file-title {
+  font-weight: 600;
+  color: var(--text-normal);
+  word-break: break-all;
+}
+
+.st-section {
+  margin-bottom: 18px;
+}
+
+.st-section-label {
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.st-tag-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 8px;
+  background-color: var(--background-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.st-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.st-tag-badge.before {
+  background-color: var(--tag-background, rgba(128, 128, 128, 0.2));
+  color: var(--text-muted);
+}
+
+.st-tag-badge.system1 {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.st-tag-badge.system2 {
+  background-color: #9c27b0;
+  color: #fff;
+}
+
+.st-tag-remove-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  border: none;
+  padding: 0;
+  margin-left: 2px;
+}
+
+.st-tag-remove-btn:hover {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.st-add-tag-box {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.st-add-tag-box input {
+  flex: 1;
+}
+
+.st-status-box {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  margin-bottom: 16px;
+}
+
+.st-status-box.loading {
+  background-color: var(--background-secondary-alt);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.st-status-box.info {
+  background-color: rgba(33, 150, 243, 0.1);
+  color: var(--text-accent);
+}
+
+.st-status-box.success {
+  background-color: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+
+.st-status-box.error {
+  background-color: rgba(244, 67, 54, 0.1);
+  color: #f44336;
+}
+
+.st-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* Settings tab tags grid */
+.st-tags-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background-color: var(--background-secondary);
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+.st-settings-tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
+}
+
+.st-settings-tag-item .st-del {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.st-settings-tag-item .st-del:hover {
+  color: var(--text-error);
+}

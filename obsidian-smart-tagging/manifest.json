@@ -1,0 +1,9 @@
+{
+  "id": "obsidian-smart-tagging",
+  "name": "Smart Tagging",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Dual-process tagging plugin using TypeSafe Jev (System 1) and Google Gemini (System 2) with First-Class tag catalog.",
+  "author": "Satoshi Nagayasu",
+  "isDesktopOnly": false
+}
