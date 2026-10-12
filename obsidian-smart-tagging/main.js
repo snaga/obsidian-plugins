@@ -6,9 +6,10 @@
 //   ノート情報抽出 (タイトル、URL、#見出し階層、冒頭本文抜粋)
 //     ⬇
 //   System 1: TypeSafe Jev 高速直感判定 (/v1/systemone)
-//     - First-Class タグカタログ（148語統制語彙）から約150〜200msで最適タグを確率評価
-//     - minProb（デフォルト 8%）以上の確信度を持つ上位タグ（最大3件）を自動選択
-//     - 適合タグがない場合（NONE_OF_THE_ABOVE または閾値未満）は System 2 へ安全にフォールバック
+//     - 貪欲逐次除外ループ（Greedy Elimination）による高精度マルチタグ抽出（最大5件）
+//     - 1位タグを採択後、候補から除外して確率を再正規化（Re-normalization）しながら次点タグを反復評価
+//     - NONE_OF_THE_ABOVE による自動自己停止（Early Exit）機構を搭載
+//     - 適合タグが全くない場合のみ、System 2 へ安全にフォールバック
 //     ⬇
 //   System 2: Google Gemini 3.5 Flash Lite 熟考推論 (/v1beta/interactions - gemini-3.5-flash-lite 固定)
 //     - 既存語彙にない新規の専門ドメインタグを PascalCase・Zettelkasten 規約に従い動的生成
@@ -162,18 +163,26 @@ class TagConfirmModal extends Modal {
       this.statusBoxEl.className = 'st-status-box loading';
       this.statusBoxEl.setText('⚡ System 1: TypeSafe Jev でFirst-Classタグを高速判定中...');
 
-      const minProb = this.plugin.settings.minProb || 0.08;
-      const maxTags = this.plugin.settings.maxTags || 3;
-      const jevResult = await this.plugin.callJev(this.metadata, this.plugin.firstClassTags, minProb, maxTags);
+      const minProb = this.plugin.settings.minProb || 0.05;
+      const maxTags = this.plugin.settings.maxTags || 5;
+      const jevResult = await this.plugin.callJev(
+        this.metadata,
+        this.plugin.firstClassTags,
+        minProb,
+        maxTags,
+        (step, tag, prob, currentTags) => {
+          this.statusBoxEl.setText(`⚡ Jev ステップ ${step}: #${tag} (${(prob * 100).toFixed(1)}%) 抽出中... (計 ${currentTags.length}件)`);
+        }
+      );
 
       if (!jevResult.isNoneOfTheAbove && jevResult.selectedTags.length > 0) {
         // System 1 (Jev) 適合
         this.reasoningEngine = 'Jev';
         this.afterTags = [...jevResult.selectedTags];
         this.statusBoxEl.className = 'st-status-box success';
-        this.statusBoxEl.setText(`✅ Jev 判定完了: Top tag=${jevResult.topChoice} (確率 ${(jevResult.topProb * 100).toFixed(1)}%)`);
+        this.statusBoxEl.setText(`✅ Jev 判定完了: ${jevResult.selectedTags.length}件のタグを逐次抽出 (${jevResult.selectedTags.map(t => '#' + t).join(', ')})`);
         
-        this.engineBadgeEl.setText('⚡ Jev (System 1)');
+        this.engineBadgeEl.setText(`⚡ Jev (${jevResult.selectedTags.length}件)`);
         this.engineBadgeEl.className = 'st-tag-badge system1';
         this.engineBadgeEl.style.display = 'inline-flex';
       } else {
@@ -300,10 +309,10 @@ class SmartTaggingSettingTab extends PluginSettingTab {
     containerEl.createEl('h3', { text: '⚙️ 推論パラメータ' });
 
     new Setting(containerEl)
-      .setName('Jev 最小採用確率 (minProb)')
-      .setDesc('確率分布のうち、タグとして採用する最小確率閾値（デフォルト: 0.08 = 8%）。')
+      .setName('Jev 最小採用確信度 (minProb)')
+      .setDesc('各ステップでTopタグの確率がこの値を下回った場合、確信度が低いと判断して自動停止（Early Exit）します（デフォルト: 0.05 = 5%）。')
       .addText(text => {
-        text.setValue(String(this.plugin.settings.minProb ?? 0.08))
+        text.setValue(String(this.plugin.settings.minProb ?? 0.05))
           .onChange(async (val) => {
             const num = parseFloat(val);
             if (!isNaN(num) && num >= 0 && num <= 1) {
@@ -315,9 +324,9 @@ class SmartTaggingSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('最大付与タグ数 (maxTags)')
-      .setDesc('1つのノートに付与するFirst-Classタグの最大件数（デフォルト: 3）。')
+      .setDesc('逐次除外ループで選定する最大タグ件数（デフォルト: 5）。途中で合致候補が尽きると自動終了します。')
       .addText(text => {
-        text.setValue(String(this.plugin.settings.maxTags ?? 3))
+        text.setValue(String(this.plugin.settings.maxTags ?? 5))
           .onChange(async (val) => {
             const num = parseInt(val, 10);
             if (!isNaN(num) && num >= 1 && num <= 10) {
@@ -419,8 +428,8 @@ module.exports = class SmartTaggingPlugin extends Plugin {
       settings: {
         jevApiKey: '',
         geminiApiKey: '',
-        minProb: 0.08,
-        maxTags: 3,
+        minProb: 0.05,
+        maxTags: 5,
         geminiModel: 'gemini-3.5-flash-lite'
       },
       firstClassTags: [],
@@ -537,27 +546,13 @@ module.exports = class SmartTaggingPlugin extends Plugin {
   }
 
   // =========================================================================
-  // ⚡ System 1: TypeSafe Jev 高速直感判定
+  // ⚡ System 1: TypeSafe Jev 高速直感判定（貪欲逐次除外ループ: Greedy Elimination）
   // =========================================================================
-  async callJev(metadata, firstClassTags, minProb = 0.08, maxTags = 3) {
-    const apiKey = this.resolveApiKey(this.settings.jevApiKey);
-    if (!apiKey) {
-      throw new Error('TypeSafe Jev APIキーが設定されていません。プラグイン設定画面で SecretStorage から設定してください。');
-    }
-
-    // 選択肢一覧（上限255）
-    const choices = [...firstClassTags];
+  async callJevSingle(apiKey, stateText, candidateChoices) {
+    const choices = [...candidateChoices];
     if (!choices.includes('NONE_OF_THE_ABOVE')) {
       choices.push('NONE_OF_THE_ABOVE');
     }
-
-    const contextParts = [
-      `Title: ${metadata.title}`,
-      metadata.url ? `URL: ${metadata.url}` : null,
-      metadata.headings.length ? `Key Headings:\n${metadata.headings.map(h => `- ${h}`).join('\n')}` : null,
-      metadata.excerpt ? `Excerpt:\n${metadata.excerpt}` : null
-    ].filter(Boolean);
-    const stateText = contextParts.join('\n\n');
 
     const criteria = {};
     for (const c of choices) {
@@ -568,9 +563,9 @@ module.exports = class SmartTaggingPlugin extends Plugin {
       model: 'jev-latest',
       state: stateText,
       questions: {
-        primary_tag: {
+        tag: {
           type: 'choice',
-          instructions: 'Select the single most accurate First-Class tag that represents the primary subject or core domain of this note. If none of the provided choices is an accurate match, select NONE_OF_THE_ABOVE.',
+          instructions: 'Select the single most accurate First-Class tag that represents the primary subject, relevant domain, or key topic of this note. If none of the provided choices is an accurate match, select NONE_OF_THE_ABOVE.',
           criteria: criteria
         }
       }
@@ -591,48 +586,79 @@ module.exports = class SmartTaggingPlugin extends Plugin {
     }
 
     const resJson = response.json;
-    const primaryTagResult = resJson?.answers?.primary_tag || resJson?.decisions?.primary_tag;
-    if (!primaryTagResult) {
+    const tagResult = resJson?.answers?.tag || resJson?.decisions?.tag;
+    if (!tagResult) {
       throw new Error('Jev API のレスポンス形式が不正です。');
     }
 
-    const probabilities = primaryTagResult.probabilities || {};
+    const probabilities = tagResult.probabilities || {};
     const sortedChoices = Object.entries(probabilities).sort((a, b) => b[1] - a[1]);
 
-    const topChoice = sortedChoices[0] ? sortedChoices[0][0] : primaryTagResult.choice;
+    const topChoice = sortedChoices[0] ? sortedChoices[0][0] : tagResult.choice;
     const topProb = sortedChoices[0] ? sortedChoices[0][1] : 1.0;
 
-    // NONE_OF_THE_ABOVE がトップ、または確率が低すぎる場合
-    if (topChoice === 'NONE_OF_THE_ABOVE' || topProb < minProb) {
-      return {
-        selectedTags: [],
-        isNoneOfTheAbove: true,
-        topChoice,
-        topProb,
-        probabilities
-      };
-    }
-
-    // minProb以上のタグを抽出（NONE_OF_THE_ABOVE は除外）
-    const validTags = [];
-    for (const [tag, prob] of sortedChoices) {
-      if (tag === 'NONE_OF_THE_ABOVE') continue;
-      if (prob >= minProb) {
-        validTags.push(tag);
-        if (validTags.length >= maxTags) break;
-      }
-    }
-
-    if (validTags.length === 0) {
-      validTags.push(topChoice);
-    }
-
     return {
-      selectedTags: validTags,
-      isNoneOfTheAbove: false,
       topChoice,
       topProb,
       probabilities
+    };
+  }
+
+  async callJev(metadata, firstClassTags, minProb = 0.05, maxTags = 5, onStepUpdate = null) {
+    const apiKey = this.resolveApiKey(this.settings.jevApiKey);
+    if (!apiKey) {
+      throw new Error('TypeSafe Jev APIキーが設定されていません。プラグイン設定画面で SecretStorage から設定してください。');
+    }
+
+    const contextParts = [
+      `Title: ${metadata.title}`,
+      metadata.url ? `URL: ${metadata.url}` : null,
+      metadata.headings.length ? `Key Headings:\n${metadata.headings.map(h => `- ${h}`).join('\n')}` : null,
+      metadata.excerpt ? `Excerpt:\n${metadata.excerpt}` : null
+    ].filter(Boolean);
+    const stateText = contextParts.join('\n\n');
+
+    const selectedTags = [];
+    let currentChoices = [...firstClassTags];
+    let firstTopProb = 0;
+
+    for (let step = 0; step < maxTags; step++) {
+      if (currentChoices.length === 0) break;
+
+      const singleResult = await this.callJevSingle(apiKey, stateText, currentChoices);
+
+      if (step === 0) {
+        firstTopProb = singleResult.topProb;
+      }
+
+      // 「これ以上合致なし」または確率が低すぎる場合は自己停止
+      if (singleResult.topChoice === 'NONE_OF_THE_ABOVE' || singleResult.topProb < minProb) {
+        break;
+      }
+
+      // タグを採用して次の選択肢から除外（再正規化）
+      selectedTags.push(singleResult.topChoice);
+      currentChoices = currentChoices.filter(t => t !== singleResult.topChoice);
+
+      if (typeof onStepUpdate === 'function') {
+        onStepUpdate(step + 1, singleResult.topChoice, singleResult.topProb, selectedTags);
+      }
+    }
+
+    if (selectedTags.length === 0) {
+      return {
+        selectedTags: [],
+        isNoneOfTheAbove: true,
+        topChoice: 'NONE_OF_THE_ABOVE',
+        topProb: firstTopProb
+      };
+    }
+
+    return {
+      selectedTags,
+      isNoneOfTheAbove: false,
+      topChoice: selectedTags[0],
+      topProb: firstTopProb
     };
   }
 
