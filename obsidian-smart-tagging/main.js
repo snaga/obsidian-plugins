@@ -42,18 +42,10 @@ class TagConfirmModal extends Modal {
     this.file = file;
     this.metadata = metadata;
     this.beforeTags = [...metadata.currentTags];
-    this.selectedBeforeTags = new Set(this.beforeTags); // デフォルトで既存タグを残す
     this.afterTags = [];
-    this.excludedAfterTags = new Set();
+    this.resultTags = [...this.beforeTags]; // 最初はBeforeタグを投入
     this.reasoningEngine = '';
     this.statusText = '推論の準備中...';
-  }
-
-  getFinalTags() {
-    const activeBefore = this.beforeTags.filter(t => this.selectedBeforeTags.has(t));
-    const activeAfter = this.afterTags;
-    // 重複を排除してマージ
-    return Array.from(new Set([...activeBefore, ...activeAfter]));
   }
 
   async onOpen() {
@@ -75,40 +67,46 @@ class TagConfirmModal extends Modal {
     // ステータス表示ボックス
     this.statusBoxEl = contentEl.createEl('div', { cls: 'st-status-box loading', text: '⚡ 推論を開始しています...' });
 
-    // Beforeタグ表示セクション (選択・除外トグル可能)
+    // 1. Beforeタグ表示セクション (参照用・シンプル表示)
     const beforeSection = contentEl.createEl('div', { cls: 'st-section' });
     const beforeLabelEl = beforeSection.createEl('div', { cls: 'st-section-label' });
-    beforeLabelEl.createSpan({ text: 'Before (現在のタグ - クリックで残す/除外)' });
-    
-    if (this.beforeTags.length > 0) {
-      const actionsSpan = beforeLabelEl.createSpan({ cls: 'st-label-actions' });
-      const deselectAllBtn = actionsSpan.createEl('button', { cls: 'st-small-btn', text: 'すべて除外' });
-      deselectAllBtn.onclick = (e) => {
-        e.preventDefault();
-        this.selectedBeforeTags.clear();
-        this.renderAll();
-      };
-      const selectAllBtn = actionsSpan.createEl('button', { cls: 'st-small-btn', text: 'すべて残す' });
-      selectAllBtn.onclick = (e) => {
-        e.preventDefault();
-        this.selectedBeforeTags = new Set(this.beforeTags);
-        this.renderAll();
-      };
-    }
-
+    beforeLabelEl.createSpan({ text: 'Before (現在のタグ)' });
     this.beforeBadgesEl = beforeSection.createEl('div', { cls: 'st-tag-badges' });
 
-    // Afterタグ表示・編集セクション
+    // 2. Afterタグ表示セクション (参照用・シンプル表示)
     this.afterSection = contentEl.createEl('div', { cls: 'st-section' });
     this.afterLabelEl = this.afterSection.createEl('div', { cls: 'st-section-label' });
-    this.afterLabelEl.createSpan({ text: 'After (提案されたタグ - クリックで除外/復元)' });
+    this.afterLabelEl.createSpan({ text: 'After (提案されたタグ)' });
     this.engineBadgeEl = this.afterLabelEl.createSpan({ cls: 'st-tag-badge system1', text: '推論中...' });
     this.engineBadgeEl.style.display = 'none';
-
     this.afterBadgesEl = this.afterSection.createEl('div', { cls: 'st-tag-badges' });
 
-    // 手動タグ追加ボックス
-    const addBox = this.afterSection.createEl('div', { cls: 'st-add-tag-box' });
+    // 3. Resultセクション (編集可能・タグ削除・手動追加)
+    this.resultSection = contentEl.createEl('div', { cls: 'st-section st-final-preview' });
+    const resultLabelEl = this.resultSection.createEl('div', { cls: 'st-section-label' });
+    resultLabelEl.createSpan({ text: 'Result (適用するタグ - 不要なタグは × で除外)' });
+
+    const resultActions = resultLabelEl.createSpan({ cls: 'st-label-actions' });
+    this.resultCountEl = resultActions.createSpan({ cls: 'st-final-count', text: `${this.resultTags.length}件` });
+    
+    const resetBtn = resultActions.createEl('button', { cls: 'st-small-btn', text: 'リセット' });
+    resetBtn.title = 'BeforeタグとAfterタグの初期マージ状態に戻す';
+    resetBtn.onclick = (e) => {
+      e.preventDefault();
+      this.resetResultTags();
+    };
+
+    const clearBtn = resultActions.createEl('button', { cls: 'st-small-btn', text: '全クリア' });
+    clearBtn.onclick = (e) => {
+      e.preventDefault();
+      this.resultTags = [];
+      this.renderResultTags();
+    };
+
+    this.resultBadgesEl = this.resultSection.createEl('div', { cls: 'st-tag-badges st-final-badges' });
+
+    // 手動タグ追加ボックス (Resultセクション内に配置)
+    const addBox = this.resultSection.createEl('div', { cls: 'st-add-tag-box' });
     this.tagInput = addBox.createEl('input', {
       type: 'text',
       placeholder: 'タグを手動追加 (例: AIAgent)...'
@@ -125,12 +123,9 @@ class TagConfirmModal extends Modal {
     const addBtn = addBox.createEl('button', { text: '追加' });
     const handleAdd = () => {
       const val = this.tagInput.value.trim().replace(/^#/, '');
-      if (val) {
-        this.excludedAfterTags.delete(val);
-        if (!this.afterTags.includes(val)) {
-          this.afterTags.push(val);
-        }
-        this.renderAll();
+      if (val && !this.resultTags.includes(val)) {
+        this.resultTags.push(val);
+        this.renderResultTags();
         this.tagInput.value = '';
       }
     };
@@ -142,19 +137,12 @@ class TagConfirmModal extends Modal {
       }
     };
 
-    // 最終プレビューセクション (Result)
-    this.finalSection = contentEl.createEl('div', { cls: 'st-section st-final-preview' });
-    const finalLabelEl = this.finalSection.createEl('div', { cls: 'st-section-label' });
-    finalLabelEl.createSpan({ text: 'Result (適用される最終タグ)' });
-    this.finalCountEl = finalLabelEl.createSpan({ cls: 'st-final-count', text: '0件' });
-    this.finalBadgesEl = this.finalSection.createEl('div', { cls: 'st-tag-badges st-final-badges' });
-
     // フッターボタン行
     const btnRow = contentEl.createEl('div', { cls: 'st-btn-row' });
     const cancelBtn = btnRow.createEl('button', { text: 'キャンセル' });
     cancelBtn.onclick = () => this.close();
 
-    this.applyBtn = btnRow.createEl('button', { cls: 'mod-cta', text: '適用する (Apply)' });
+    this.applyBtn = btnRow.createEl('button', { cls: 'mod-cta', text: `適用する (Apply - ${this.resultTags.length}件)` });
     this.applyBtn.disabled = true;
     this.applyBtn.onclick = async () => {
       await this.applyTags();
@@ -162,10 +150,18 @@ class TagConfirmModal extends Modal {
     };
 
     // 初期描画
-    this.renderAll();
+    this.renderBeforeTags();
+    this.renderAfterTags();
+    this.renderResultTags();
 
     // 二重推論を実行
     await this.runReasoning();
+  }
+
+  resetResultTags() {
+    // Beforeタグ + Afterタグ を重複排除して復元
+    this.resultTags = Array.from(new Set([...this.beforeTags, ...this.afterTags]));
+    this.renderResultTags();
   }
 
   renderBeforeTags() {
@@ -175,107 +171,62 @@ class TagConfirmModal extends Modal {
       return;
     }
     for (const tag of this.beforeTags) {
-      const isSelected = this.selectedBeforeTags.has(tag);
-      const badge = this.beforeBadgesEl.createEl('span', {
-        cls: isSelected ? 'st-tag-badge before' : 'st-tag-badge before excluded',
-        title: isSelected ? 'クリックで除外' : 'クリックで復元'
-      });
+      const badge = this.beforeBadgesEl.createEl('span', { cls: 'st-tag-badge before' });
       badge.createSpan({ text: `#${tag}` });
-      const actionBtn = badge.createEl('button', {
-        cls: isSelected ? 'st-tag-remove-btn' : 'st-tag-add-btn',
-        text: isSelected ? '×' : '+'
-      });
-      const toggle = () => {
-        if (this.selectedBeforeTags.has(tag)) {
-          this.selectedBeforeTags.delete(tag);
-        } else {
-          this.selectedBeforeTags.add(tag);
-        }
-        this.renderAll();
-      };
-      actionBtn.onclick = (e) => {
-        e.stopPropagation();
-        toggle();
-      };
-      badge.onclick = toggle;
     }
   }
 
   renderAfterTags() {
     this.afterBadgesEl.empty();
-    if (this.afterTags.length === 0 && this.excludedAfterTags.size === 0) {
-      this.afterBadgesEl.createEl('span', { text: '(提案タグなし - 手動で追加できます)', cls: 'st-tag-empty' });
+    if (this.afterTags.length === 0) {
+      this.afterBadgesEl.createEl('span', { text: '(推論中...)', cls: 'st-tag-empty' });
       return;
     }
     const engineClass = this.reasoningEngine === 'Gemini' ? 'system2' : 'system1';
-
-    // 有効なAfterタグ
     for (const tag of this.afterTags) {
-      const badge = this.afterBadgesEl.createEl('span', {
-        cls: `st-tag-badge ${engineClass}`,
-        title: 'クリックで除外'
-      });
+      const badge = this.afterBadgesEl.createEl('span', { cls: `st-tag-badge ${engineClass}` });
       badge.createSpan({ text: `#${tag}` });
-      const delBtn = badge.createEl('button', { cls: 'st-tag-remove-btn', text: '×' });
-      const remove = () => {
-        this.afterTags = this.afterTags.filter(t => t !== tag);
-        this.excludedAfterTags.add(tag);
-        this.renderAll();
-      };
-      delBtn.onclick = (e) => {
-        e.stopPropagation();
-        remove();
-      };
-      badge.onclick = remove;
-    }
-
-    // 除外されたAfterタグ (復元可能)
-    for (const tag of this.excludedAfterTags) {
-      const badge = this.afterBadgesEl.createEl('span', {
-        cls: `st-tag-badge ${engineClass} excluded`,
-        title: 'クリックで復元'
-      });
-      badge.createSpan({ text: `#${tag}` });
-      const restoreBtn = badge.createEl('button', { cls: 'st-tag-add-btn', text: '+' });
-      const restore = () => {
-        this.excludedAfterTags.delete(tag);
-        if (!this.afterTags.includes(tag)) {
-          this.afterTags.push(tag);
-        }
-        this.renderAll();
-      };
-      restoreBtn.onclick = (e) => {
-        e.stopPropagation();
-        restore();
-      };
-      badge.onclick = restore;
     }
   }
 
-  renderFinalPreview() {
-    if (!this.finalBadgesEl) return;
-    this.finalBadgesEl.empty();
-    const finalTags = this.getFinalTags();
-    if (this.finalCountEl) {
-      this.finalCountEl.setText(`${finalTags.length}件`);
-    }
-    if (finalTags.length === 0) {
-      this.finalBadgesEl.createEl('span', { text: '(適用されるタグはありません)', cls: 'st-tag-empty' });
-    } else {
-      for (const tag of finalTags) {
-        const badge = this.finalBadgesEl.createEl('span', { cls: 'st-tag-badge final' });
-        badge.createSpan({ text: `#${tag}` });
-      }
+  renderResultTags() {
+    if (!this.resultBadgesEl) return;
+    this.resultBadgesEl.empty();
+
+    if (this.resultCountEl) {
+      this.resultCountEl.setText(`${this.resultTags.length}件`);
     }
     if (this.applyBtn) {
-      this.applyBtn.setText(`適用する (Apply - ${finalTags.length}件)`);
+      this.applyBtn.setText(`適用する (Apply - ${this.resultTags.length}件)`);
     }
-  }
 
-  renderAll() {
-    this.renderBeforeTags();
-    this.renderAfterTags();
-    this.renderFinalPreview();
+    if (this.resultTags.length === 0) {
+      this.resultBadgesEl.createEl('span', { text: '(適用するタグがありません - 下から追加できます)', cls: 'st-tag-empty' });
+      return;
+    }
+
+    const engineClass = this.reasoningEngine === 'Gemini' ? 'system2' : 'system1';
+
+    for (const tag of this.resultTags) {
+      // タグの出所に応じて色分け
+      let badgeCls = 'st-tag-badge final';
+      if (this.beforeTags.includes(tag) && !this.afterTags.includes(tag)) {
+        badgeCls = 'st-tag-badge before'; // 既存タグ由来
+      } else if (this.afterTags.includes(tag)) {
+        badgeCls = `st-tag-badge ${engineClass}`; // AI提案由来
+      }
+
+      const badge = this.resultBadgesEl.createEl('span', { cls: badgeCls });
+      badge.createSpan({ text: `#${tag}` });
+      
+      const delBtn = badge.createEl('button', { cls: 'st-tag-remove-btn', text: '×' });
+      delBtn.title = '除外する';
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.resultTags = this.resultTags.filter(t => t !== tag);
+        this.renderResultTags();
+      };
+    }
   }
 
   async runReasoning() {
@@ -321,7 +272,15 @@ class TagConfirmModal extends Modal {
         this.engineBadgeEl.style.display = 'inline-flex';
       }
 
-      this.renderAll();
+      // Jev/Geminiの提案タグをResultTagsに重複排除マージ
+      for (const tag of this.afterTags) {
+        if (!this.resultTags.includes(tag)) {
+          this.resultTags.push(tag);
+        }
+      }
+
+      this.renderAfterTags();
+      this.renderResultTags();
       this.applyBtn.disabled = false;
     } catch (err) {
       console.error('[SmartTagging] Reasoning error:', err);
@@ -329,17 +288,17 @@ class TagConfirmModal extends Modal {
       this.statusBoxEl.setText(`❌ エラー: ${err.message}`);
       // エラー時でも手動追加・適用可能にする
       this.applyBtn.disabled = false;
-      this.renderAll();
+      this.renderAfterTags();
+      this.renderResultTags();
     }
   }
 
   async applyTags() {
-    const finalTags = this.getFinalTags();
     try {
       await this.app.fileManager.processFrontMatter(this.file, (frontmatter) => {
-        frontmatter.tags = finalTags;
+        frontmatter.tags = this.resultTags;
       });
-      new Notice(`✅ タグを更新しました (${finalTags.length}件): ${finalTags.join(', ')}`);
+      new Notice(`✅ タグを更新しました (${this.resultTags.length}件): ${this.resultTags.join(', ')}`);
     } catch (err) {
       console.error('[SmartTagging] Failed to update frontmatter:', err);
       new Notice(`❌ タグの更新に失敗しました: ${err.message}`);
