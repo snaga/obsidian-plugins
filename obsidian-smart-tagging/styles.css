@@ -70,8 +70,25 @@
 }
 
 .st-tag-badge.before {
-  background-color: var(--tag-background, rgba(128, 128, 128, 0.2));
-  color: var(--text-muted);
+  background-color: var(--tag-background, rgba(128, 128, 128, 0.25));
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.st-tag-badge.excluded {
+  background-color: transparent !important;
+  border: 1px dashed var(--text-faint) !important;
+  color: var(--text-faint) !important;
+  text-decoration: line-through;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.st-tag-badge.excluded:hover {
+  opacity: 1;
+  border-color: var(--interactive-accent) !important;
+  color: var(--text-normal) !important;
+  text-decoration: none;
 }
 
 .st-tag-badge.system1 {
@@ -82,6 +99,67 @@
 .st-tag-badge.system2 {
   background-color: #9c27b0;
   color: #fff;
+}
+
+.st-tag-badge.final {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+.st-tag-add-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font-size: 11px;
+  line-height: 1;
+  border: none;
+  padding: 0;
+  margin-left: 2px;
+}
+
+.st-tag-add-btn:hover {
+  background: var(--interactive-accent);
+  color: #fff;
+}
+
+.st-label-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.st-small-btn {
+  font-size: 0.75em !important;
+  padding: 1px 6px !important;
+  height: auto !important;
+  line-height: 1.2 !important;
+  border-radius: 4px !important;
+  cursor: pointer;
+  background: var(--background-modifier-border);
+  border: none;
+  color: var(--text-muted);
+}
+
+.st-small-btn:hover {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+.st-final-badges {
+  background-color: var(--background-primary) !important;
+  border: 1.5px solid var(--interactive-accent) !important;
+}
+
+.st-final-count {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--interactive-accent);
 }
 
 .st-tag-remove-btn {
