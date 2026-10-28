@@ -1,0 +1,45 @@
+/* Obsidian Simple Note Packer styles */
+
+.simple-note-packer-modal {
+    padding: 16px;
+}
+
+.simple-note-packer-dropzone {
+    border: 2px dashed var(--interactive-accent);
+    border-radius: var(--radius-m);
+    padding: 28px;
+    text-align: center;
+    background-color: var(--background-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    margin: 16px 0;
+}
+
+.simple-note-packer-dropzone:hover,
+.simple-note-packer-dropzone.dragover {
+    background-color: var(--background-modifier-hover);
+    border-color: var(--interactive-accent-hover);
+    transform: scale(1.01);
+}
+
+.simple-note-packer-file-list {
+    margin-top: 12px;
+    max-height: 180px;
+    overflow-y: auto;
+    font-size: 13px;
+    background: var(--background-primary-alt);
+    border-radius: var(--radius-s);
+    padding: 8px 12px;
+}
+
+.simple-note-packer-file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.simple-note-packer-file-item:last-child {
+    border-bottom: none;
+}
