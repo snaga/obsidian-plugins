@@ -23,27 +23,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return module.exports;
 })();
 
-const DEFAULT_SETTINGS = {
-    exportAssetsFolder: 'same_folder', // 'same_folder' or 'subfolder'
-    assetsSubfolderName: 'assets',
-    exportLinkFormat: 'standard', // 'standard' (![...](...)) or 'wikilink' (![[...]])
-    defaultImportTargetFolder: '',
-    customAttachmentFolder: '' // empty string means use vault setting
-};
+const DEFAULT_SETTINGS = {};
 
 class SimpleNotePackerPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
-        // 1. Ribbon Icon for Import
-        this.addRibbonIcon('package-open', 'Import Note Package (ZIP)', () => {
+        // 1. リボンアイコン（インポート）
+        this.addRibbonIcon('package-open', 'ZIPノートをインポート 📦', () => {
             this.promptImportZip();
         });
 
-        // 2. Commands
+        // 2. コマンドパレット
         this.addCommand({
             id: 'export-active-note-package',
-            name: 'Export active note with assets to ZIP',
+            name: '開いているノートを画像ごとZIPにエクスポート 📦',
             checkCallback: (checking) => {
                 const activeFile = this.app.workspace.getActiveFile();
                 if (activeFile && activeFile.extension === 'md') {
@@ -58,18 +52,18 @@ class SimpleNotePackerPlugin extends Plugin {
 
         this.addCommand({
             id: 'import-note-package-zip',
-            name: 'Import note package from ZIP',
+            name: 'ZIPからノートをインポート 📥',
             callback: () => {
                 this.promptImportZip();
             }
         });
 
-        // 3. File Context Menu (Right Click)
+        // 3. ファイル一覧コンテキストメニュー（右クリック）
         this.registerEvent(
             this.app.workspace.on('file-menu', (menu, file, source) => {
                 if (file instanceof TFile && file.extension === 'md') {
                     menu.addItem((item) => {
-                        item.setTitle('Export to ZIP (with assets)')
+                        item.setTitle('画像ごとZIPにエクスポート 📦')
                             .setIcon('package-export')
                             .onClick(() => {
                                 this.exportNotePackage(file);
@@ -77,7 +71,7 @@ class SimpleNotePackerPlugin extends Plugin {
                     });
                 } else if (file instanceof TFolder) {
                     menu.addItem((item) => {
-                        item.setTitle('Import ZIP package into this folder')
+                        item.setTitle('このフォルダにZIPノートをインポート 📥')
                             .setIcon('package-open')
                             .onClick(() => {
                                 this.promptImportZip(file.path);
@@ -87,13 +81,13 @@ class SimpleNotePackerPlugin extends Plugin {
             })
         );
 
-        // 4. Editor Context Menu
+        // 4. エディタ内コンテキストメニュー（右クリック）
         this.registerEvent(
             this.app.workspace.on('editor-menu', (menu, editor, view) => {
                 const file = view?.file;
                 if (file instanceof TFile && file.extension === 'md') {
                     menu.addItem((item) => {
-                        item.setTitle('Export Note to ZIP (with assets)')
+                        item.setTitle('画像ごとZIPにエクスポート 📦')
                             .setIcon('package-export')
                             .onClick(() => {
                                 this.exportNotePackage(file);
@@ -103,7 +97,7 @@ class SimpleNotePackerPlugin extends Plugin {
             })
         );
 
-        // 5. Settings tab
+        // 5. 設定画面タブ
         this.addSettingTab(new SimpleNotePackerSettingTab(this.app, this));
     }
 
@@ -120,33 +114,31 @@ class SimpleNotePackerPlugin extends Plugin {
     // ==========================================
     async exportNotePackage(file) {
         try {
-            // Sanitize filename for safe saving on Windows / OS
+            // ファイル名のサニタイズ（Windows/OS禁止文字の除去）
             const sanitizedBasename = file.basename.replace(/[\\/:*?"<>|]/g, '_');
             const defaultFilename = `${sanitizedBasename}.zip`;
 
-            // Prompt user for save destination via native dialog
+            // ネイティブ保存ダイアログを表示
             const saveFilePath = await this.showSaveDialog(defaultFilename);
             if (!saveFilePath) {
-                new Notice('Export canceled.');
+                new Notice('エクスポートをキャンセルしたよ！');
                 return;
             }
 
-            new Notice(`Packing "${file.basename}"...`);
+            new Notice(`「${file.basename}」をZIPにパック中だよ〜！📦✨`);
 
             const zip = new JSZip();
             const rootFolderName = sanitizedBasename;
             const rootFolder = zip.folder(rootFolderName);
 
-            // Read original Markdown content
+            // ノート本文の読み込み
             let content = await this.app.vault.read(file);
 
-            // Extract embeds from metadataCache
+            // キャッシュから埋め込みアセットを抽出
             const fileCache = this.app.metadataCache.getFileCache(file);
             const embeds = fileCache?.embeds || [];
 
-            const assetMap = new Map(); // targetFile.path -> asset details
-            const isSubfolder = this.settings.exportAssetsFolder === 'subfolder';
-            const subfolderName = this.settings.assetsSubfolderName || 'assets';
+            const assetMap = new Map();
 
             for (const embed of embeds) {
                 const targetFile = this.app.metadataCache.getFirstLinkpathDest(embed.link, file.path);
@@ -154,19 +146,16 @@ class SimpleNotePackerPlugin extends Plugin {
                     const ext = targetFile.extension.toLowerCase();
                     const isAsset = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'pdf', 'mp4', 'webm'].includes(ext);
                     if (isAsset && !assetMap.has(targetFile.path)) {
-                        const relativePathInZip = isSubfolder 
-                            ? `${subfolderName}/${targetFile.name}`
-                            : targetFile.name;
                         assetMap.set(targetFile.path, {
                             targetFile,
                             linkInEmbed: embed.link,
-                            relativePathInZip
+                            relativePathInZip: targetFile.name // ノートと同じフォルダに配置
                         });
                     }
                 }
             }
 
-            // Also check for Markdown links ![alt](path) in raw content as fallback
+            // 本文内のMarkdownリンク ![alt](path) もフォールバック検出
             const mdImgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
             let mdMatch;
             while ((mdMatch = mdImgRegex.exec(content)) !== null) {
@@ -177,67 +166,60 @@ class SimpleNotePackerPlugin extends Plugin {
                     const ext = targetFile.extension.toLowerCase();
                     const isAsset = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'pdf', 'mp4', 'webm'].includes(ext);
                     if (isAsset && !assetMap.has(targetFile.path)) {
-                        const relativePathInZip = isSubfolder 
-                            ? `${subfolderName}/${targetFile.name}`
-                            : targetFile.name;
                         assetMap.set(targetFile.path, {
                             targetFile,
                             linkInEmbed: cleanTarget,
-                            relativePathInZip
+                            relativePathInZip: targetFile.name // ノートと同じフォルダに配置
                         });
                     }
                 }
             }
 
-            // Add assets to ZIP
+            // アセットをZIPに格納
             for (const [_, info] of assetMap) {
                 const binaryData = await this.app.vault.readBinary(info.targetFile);
                 rootFolder.file(info.relativePathInZip, binaryData);
             }
 
-            // Rewrite links in Markdown
+            // Markdown内のリンク書き換え: 常に標準Markdown形式 ![alt](./image.png) に統一
             for (const [_, info] of assetMap) {
                 const originalLink = info.linkInEmbed;
                 const encodedRelative = encodeURI(info.relativePathInZip);
 
-                // 1. Replace Wikilinks ![[originalLink]] or ![[originalLink|size]]
+                // 1. Wikilinks ![[originalLink]] または ![[originalLink|size]] の置換
                 const escapedLink = originalLink.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
                 const wikiRegex = new RegExp(`!\\\[\\\[${escapedLink}(\\|[^\]]+)?\\\]\\\]`, 'g');
                 
                 content = content.replace(wikiRegex, (match, p1) => {
                     const altOrSize = p1 ? p1.substring(1) : '';
-                    if (this.settings.exportLinkFormat === 'standard') {
-                        return `![${altOrSize || info.targetFile.name}](${encodedRelative})`;
-                    } else {
-                        return `![[${info.targetFile.name}${p1 || ''}]]`;
-                    }
+                    return `![${altOrSize || info.targetFile.name}](./${encodedRelative})`;
                 });
 
-                // 2. Replace Markdown links ![alt](path)
+                // 2. Markdownリンク ![alt](path) の置換
                 const mdRegex = new RegExp(`!\\\[([^\]]*)\\\]\\((\\S*?${escapedLink}\\S*?)\\)`, 'g');
                 content = content.replace(mdRegex, (match, alt, oldPath) => {
-                    return `![${alt}](${encodedRelative})`;
+                    return `![${alt}](./${encodedRelative})`;
                 });
             }
 
-            // Add rewritten Markdown to root folder of ZIP
+            // 書き換えたMarkdownファイルをZIPに格納
             rootFolder.file(`${file.name}`, content);
 
-            // Generate ZIP buffer (nodebuffer for desktop)
+            // ZIPバイナリ生成 (nodebuffer)
             const zipBuffer = await zip.generateAsync({
                 type: 'nodebuffer',
                 compression: 'DEFLATE',
                 compressionOptions: { level: 6 }
             });
 
-            // Save to selected file path
+            // 保存先へ書き込み
             await this.writeZipToFile(saveFilePath, zipBuffer);
 
-            new Notice(`Successfully exported: ${path.basename(saveFilePath)} (${assetMap.size} asset(s))`);
+            new Notice(`「${path.basename(saveFilePath)}」のエクスポート大成功！🎉（画像: ${assetMap.size}件）`);
             this.revealInExplorer(saveFilePath);
         } catch (err) {
             console.error('Simple Note Packer Export Error:', err);
-            new Notice(`Export failed: ${err.message}`);
+            new Notice(`エクスポートでエラー出ちゃった…💦: ${err.message}`);
         }
     }
 
@@ -248,11 +230,11 @@ class SimpleNotePackerPlugin extends Plugin {
             const dialog = remote ? remote.dialog : electron.dialog;
             if (dialog && dialog.showSaveDialog) {
                 const result = await dialog.showSaveDialog({
-                    title: 'Export Note Package to ZIP',
+                    title: 'ノートパッケージをZIPにエクスポート',
                     defaultPath: defaultName,
                     filters: [
-                        { name: 'ZIP Files', extensions: ['zip'] },
-                        { name: 'All Files', extensions: ['*'] }
+                        { name: 'ZIP アーカイブ', extensions: ['zip'] },
+                        { name: 'すべてのファイル', extensions: ['*'] }
                     ]
                 });
                 if (result.canceled || !result.filePath) {
@@ -264,7 +246,7 @@ class SimpleNotePackerPlugin extends Plugin {
             console.warn('Native save dialog failed:', e);
         }
 
-        // Fallback: Downloads folder
+        // フォールバック: Downloadsフォルダ
         try {
             const os = require('os');
             const downloads = path.join(os.homedir(), 'Downloads');
@@ -304,17 +286,22 @@ class SimpleNotePackerPlugin extends Plugin {
             const dialog = remote ? remote.dialog : electron.dialog;
             if (dialog && dialog.showOpenDialog) {
                 const result = await dialog.showOpenDialog({
-                    title: 'Import Note Package (ZIP)',
+                    title: 'ZIPノートパッケージを選択してね 📦',
                     filters: [
-                        { name: 'ZIP Files', extensions: ['zip'] },
-                        { name: 'All Files', extensions: ['*'] }
+                        { name: 'ZIP アーカイブ', extensions: ['zip'] },
+                        { name: 'すべてのファイル', extensions: ['*'] }
                     ],
                     properties: ['openFile']
                 });
                 if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
                     const filePath = result.filePaths[0];
                     const buffer = fs.readFileSync(filePath);
-                    await this.importZipBuffer(buffer, targetFolderPath, path.basename(filePath));
+                    const zipFilename = path.basename(filePath);
+
+                    // インポート設定モーダルを表示！
+                    new ImportPackageModal(this.app, zipFilename, targetFolderPath, async (options) => {
+                        await this.importZipBuffer(buffer, zipFilename, options);
+                    }).open();
                     return;
                 }
                 return;
@@ -323,7 +310,7 @@ class SimpleNotePackerPlugin extends Plugin {
             console.warn('Native open dialog failed, falling back:', e);
         }
 
-        // Web input fallback
+        // Web input フォールバック
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = '.zip';
@@ -333,7 +320,9 @@ class SimpleNotePackerPlugin extends Plugin {
             const file = e.target.files?.[0];
             if (file) {
                 const arrayBuffer = await file.arrayBuffer();
-                await this.importZipBuffer(arrayBuffer, targetFolderPath, file.name);
+                new ImportPackageModal(this.app, file.name, targetFolderPath, async (options) => {
+                    await this.importZipBuffer(arrayBuffer, file.name, options);
+                }).open();
             }
             document.body.removeChild(fileInput);
         };
@@ -342,28 +331,29 @@ class SimpleNotePackerPlugin extends Plugin {
         fileInput.click();
     }
 
-    async importZipBuffer(zipData, targetFolderPath = null, zipFilename = 'archive.zip') {
-        new Notice(`Unpacking "${zipFilename}"...`);
+    async importZipBuffer(zipData, zipFilename, options) {
+        new Notice(`「${zipFilename}」を展開中！ちょっと待ってね〜！⏳`);
         try {
             const zip = await JSZip.loadAsync(zipData);
 
-            // Determine Target Markdown Folder
-            let mdFolder = targetFolderPath;
-            if (!mdFolder) {
-                mdFolder = this.settings.defaultImportTargetFolder || '';
-            }
+            // 1. ノートの保存先フォルダの準備
+            const mdFolder = options.targetFolder || '';
             if (mdFolder) {
                 await this.ensureFolder(mdFolder);
             }
 
-            // Determine Attachment Folder
-            let attachmentFolder = this.settings.customAttachmentFolder;
-            if (!attachmentFolder) {
-                attachmentFolder = this.app.vault.getConfig('attachmentFolderPath') || '99_Assets';
+            // 2. 画像の保存先フォルダの準備（Vault設定 or ノートと同じフォルダ）
+            let attachmentFolder = '';
+            if (options.assetDestination === 'same_folder') {
+                attachmentFolder = mdFolder;
+            } else {
+                attachmentFolder = this.app.vault.getConfig('attachmentFolderPath') || '';
             }
-            await this.ensureFolder(attachmentFolder);
+            if (attachmentFolder) {
+                await this.ensureFolder(attachmentFolder);
+            }
 
-            // Collect files inside ZIP
+            // ZIP内部のファイルを走査
             const mdFiles = [];
             const assetFiles = [];
 
@@ -382,13 +372,13 @@ class SimpleNotePackerPlugin extends Plugin {
             });
 
             if (mdFiles.length === 0) {
-                throw new Error('No Markdown file (.md) found inside the ZIP archive.');
+                throw new Error('ZIPの中にMarkdownファイル（.md）が見つからなかったよ！💦');
             }
 
-            // 1. Save all assets to attachment folder
+            // 3. アセットを保存
             const savedAssets = new Map();
             for (const asset of assetFiles) {
-                const targetAssetPath = normalizePath(`${attachmentFolder}/${asset.filename}`);
+                const targetAssetPath = normalizePath(attachmentFolder ? `${attachmentFolder}/${asset.filename}` : asset.filename);
                 const assetData = await asset.zipEntry.async('uint8array');
 
                 let targetFile = this.app.vault.getAbstractFileByPath(targetAssetPath);
@@ -400,12 +390,12 @@ class SimpleNotePackerPlugin extends Plugin {
                 savedAssets.set(asset.filename, targetFile);
             }
 
-            // 2. Process Markdown files and rewrite links
+            // 4. Markdown内の画像リンクをすべてObsidian Wikiリンク ![[filename|alt]] に変換して保存
             let lastOpenedFile = null;
             for (const md of mdFiles) {
                 let mdContent = await md.zipEntry.async('string');
 
-                // Rewrite relative image links to Obsidian Wikilinks ![[filename]]
+                // Markdown形式の画像リンク ![alt](./image.png) や ![alt](image.png) を Wikiリンクに変換
                 mdContent = mdContent.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, imgPath) => {
                     const decoded = decodeURI(imgPath).split('?')[0].split('#')[0];
                     const filename = path.basename(decoded);
@@ -415,7 +405,7 @@ class SimpleNotePackerPlugin extends Plugin {
                     return match;
                 });
 
-                // Ensure existing Wikilinks ![[subfolder/image.png]] map to ![[image.png]]
+                // 既存のWikiリンク ![[subfolder/image.png]] があっても直接 ![[image.png]] に再バインド
                 mdContent = mdContent.replace(/!\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, (match, linkText, p1) => {
                     const filename = path.basename(linkText);
                     if (savedAssets.has(filename)) {
@@ -424,7 +414,7 @@ class SimpleNotePackerPlugin extends Plugin {
                     return match;
                 });
 
-                // Save Markdown file
+                // Markdownファイルを保存
                 const targetMdPath = normalizePath(mdFolder ? `${mdFolder}/${md.filename}` : md.filename);
                 let mdTFile = this.app.vault.getAbstractFileByPath(targetMdPath);
                 if (mdTFile instanceof TFile) {
@@ -436,16 +426,16 @@ class SimpleNotePackerPlugin extends Plugin {
                 lastOpenedFile = mdTFile;
             }
 
-            // 3. Open the imported note in workspace
+            // 5. 展開したノートを画面上で開く
             if (lastOpenedFile) {
                 const leaf = this.app.workspace.getLeaf(false);
                 await leaf.openFile(lastOpenedFile);
             }
 
-            new Notice(`Successfully imported ${mdFiles.length} note(s) and ${assetFiles.length} asset(s)!`);
+            new Notice(`インポート完了〜！ノート${mdFiles.length}件＆画像${assetFiles.length}件をバッチリ展開したよ！✨🎉`);
         } catch (err) {
             console.error('Simple Note Packer Import Error:', err);
-            new Notice(`Import failed: ${err.message}`);
+            new Notice(`インポート失敗しちゃった…ごめんね💦: ${err.message}`);
         }
     }
 
@@ -459,6 +449,101 @@ class SimpleNotePackerPlugin extends Plugin {
     }
 }
 
+// ==========================================
+// IMPORT CONFIRMATION MODAL
+// ==========================================
+class ImportPackageModal extends Modal {
+    constructor(app, zipFilename, initialTargetFolder, onConfirm) {
+        super(app);
+        this.zipFilename = zipFilename;
+        this.selectedFolder = initialTargetFolder || '';
+        this.assetDestination = 'vault_attachment'; // 'vault_attachment' or 'same_folder'
+        this.onConfirm = onConfirm;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('simple-note-packer-modal');
+
+        contentEl.createEl('h2', { text: '📦 ノートパッケージのインポート' });
+
+        const infoText = contentEl.createEl('p', {
+            text: `「${this.zipFilename}」をVaultに展開するよ！どこに保存するか選んでね〜！✨`
+        });
+        infoText.style.color = 'var(--text-muted)';
+        infoText.style.marginBottom = '1.2em';
+        infoText.style.fontSize = '0.9em';
+
+        // 1. ノートの保存先フォルダ
+        const folders = this.app.vault.getAllLoadedFiles()
+            .filter((f) => f instanceof TFolder)
+            .map((f) => f.path)
+            .sort((a, b) => a.localeCompare(b));
+
+        new Setting(contentEl)
+            .setName('📂 ノートの保存先フォルダ')
+            .setDesc('Markdownファイルを展開するフォルダを選んでね')
+            .addDropdown((dropdown) => {
+                dropdown.addOption('', '/ (Vaultルート直下)');
+                for (const folder of folders) {
+                    dropdown.addOption(folder, folder);
+                }
+                dropdown.setValue(this.selectedFolder);
+                dropdown.onChange((value) => {
+                    this.selectedFolder = value;
+                });
+            });
+
+        // 2. 画像の保存先（二択）
+        const vaultAttachmentFolder = this.app.vault.getConfig('attachmentFolderPath') || 'Vaultルート直下';
+        new Setting(contentEl)
+            .setName('🖼️ 画像の保存先')
+            .setDesc('画像の置き場所を2パターンから選んでね')
+            .addDropdown((dropdown) => {
+                dropdown.addOption('vault_attachment', `Vaultのアタッチメント設定 (${vaultAttachmentFolder})`);
+                dropdown.addOption('same_folder', 'ノートと同じフォルダ（自己完結型）');
+                dropdown.setValue(this.assetDestination);
+                dropdown.onChange((value) => {
+                    this.assetDestination = value;
+                });
+            });
+
+        // 3. アクションボタン
+        const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+        buttonContainer.style.display = 'flex';
+        buttonContainer.style.justifyContent = 'flex-end';
+        buttonContainer.style.gap = '10px';
+        buttonContainer.style.marginTop = '2em';
+
+        const cancelBtn = buttonContainer.createEl('button', { text: 'キャンセル' });
+        cancelBtn.onClickEvent(() => {
+            new Notice('インポートをキャンセルしたよ！');
+            this.close();
+        });
+
+        const importBtn = buttonContainer.createEl('button', {
+            text: 'インポートする！🚀',
+            cls: 'mod-cta'
+        });
+        importBtn.onClickEvent(() => {
+            this.close();
+            this.onConfirm({
+                targetFolder: this.selectedFolder,
+                assetDestination: this.assetDestination
+            });
+        });
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// ==========================================
+// SETTINGS TAB (GUIDE ONLY)
+// ==========================================
 class SimpleNotePackerSettingTab extends PluginSettingTab {
     constructor(app, plugin) {
         super(app, plugin);
@@ -469,80 +554,29 @@ class SimpleNotePackerSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'Simple Note Packer Settings' });
+        containerEl.createEl('h2', { text: '📦 Simple Note Packer' });
 
-        // Export Settings
-        containerEl.createEl('h3', { text: 'Export Settings (ZIP packing)' });
-
-        new Setting(containerEl)
-            .setName('Asset placement inside ZIP')
-            .setDesc('Where to place embedded assets inside the exported ZIP folder.')
-            .addDropdown((dropdown) =>
-                dropdown
-                    .addOption('same_folder', 'Same folder as note (e.g. note.md and image.png together)')
-                    .addOption('subfolder', 'Subfolder (e.g. assets/image.png)')
-                    .setValue(this.plugin.settings.exportAssetsFolder)
-                    .onChange(async (value) => {
-                        this.plugin.settings.exportAssetsFolder = value;
-                        await this.plugin.saveSettings();
-                    })
-            );
-
-        new Setting(containerEl)
-            .setName('Assets subfolder name')
-            .setDesc('Used only when "Subfolder" placement is selected above.')
-            .addText((text) =>
-                text
-                    .setPlaceholder('assets')
-                    .setValue(this.plugin.settings.assetsSubfolderName)
-                    .onChange(async (value) => {
-                        this.plugin.settings.assetsSubfolderName = value.trim() || 'assets';
-                        await this.plugin.saveSettings();
-                    })
-            );
+        const descBox = containerEl.createEl('div');
+        descBox.style.marginBottom = '1.5em';
+        descBox.style.padding = '1.2em 1.4em';
+        descBox.style.background = 'var(--background-secondary)';
+        descBox.style.borderRadius = '8px';
+        descBox.style.fontSize = '0.9em';
+        descBox.style.lineHeight = '1.6';
+        descBox.innerHTML = `
+            <h3 style="margin-top:0;">✨ Simple Note Packer へようこそ！</h3>
+            ノートと埋め込み画像をまるごと1つのZIPにまとめてエクスポート＆インポートできるプラグインだよ！<br><br>
+            <strong>📦 エクスポート（書き出し）:</strong><br>
+            ・ノートと画像を1つのフォルダにまとめてZIPにするよ。<br>
+            ・画像リンクは標準Markdown（<code>![alt](./image.png)</code>）に自動変換されるから、VS CodeやGitHub、他のエディタで解凍してそのまま見ても画像が綺麗に表示されるよ！<br><br>
+            <strong>📥 インポート（読み込み）:</strong><br>
+            ・ZIPを選ぶと、保存先フォルダと画像の置き場所（Vaultのアセットフォルダ or ノート同階層）をその場でパッと選べるよ！<br>
+            ・Markdown内の画像リンクはObsidianのWikiリンク（<code>![[image.png]]</code>）に自動変換されるから、手間いらずでキレイに復元できるよ！
+        `;
 
         new Setting(containerEl)
-            .setName('Link format in exported Markdown')
-            .setDesc('Standard Markdown format ensures maximum compatibility with VSCode, GitHub, and other viewers.')
-            .addDropdown((dropdown) =>
-                dropdown
-                    .addOption('standard', 'Standard Markdown: ![alt](./image.png)')
-                    .addOption('wikilink', 'Obsidian Wikilink: ![[image.png]]')
-                    .setValue(this.plugin.settings.exportLinkFormat)
-                    .onChange(async (value) => {
-                        this.plugin.settings.exportLinkFormat = value;
-                        await this.plugin.saveSettings();
-                    })
-            );
-
-        // Import Settings
-        containerEl.createEl('h3', { text: 'Import Settings (ZIP unpacking)' });
-
-        new Setting(containerEl)
-            .setName('Default import folder for notes')
-            .setDesc('Leave blank to import into the vault root, or enter a folder path (e.g. "10_Inbox").')
-            .addText((text) =>
-                text
-                    .setPlaceholder('10_Inbox')
-                    .setValue(this.plugin.settings.defaultImportTargetFolder)
-                    .onChange(async (value) => {
-                        this.plugin.settings.defaultImportTargetFolder = value.trim();
-                        await this.plugin.saveSettings();
-                    })
-            );
-
-        new Setting(containerEl)
-            .setName('Custom asset folder for imported images')
-            .setDesc('Leave blank to use Vault attachment folder (currently: "' + (this.app.vault.getConfig('attachmentFolderPath') || 'vault root') + '").')
-            .addText((text) =>
-                text
-                    .setPlaceholder('99_Assets')
-                    .setValue(this.plugin.settings.customAttachmentFolder)
-                    .onChange(async (value) => {
-                        this.plugin.settings.customAttachmentFolder = value.trim();
-                        await this.plugin.saveSettings();
-                    })
-            );
+            .setName('💡 事前設定は不要だよ！')
+            .setDesc('インポート先や画像の置き場所は、ZIPインポート時に毎回サクッと選べるから、ここでの面倒な設定は一切ナシ！そのまま自由に使ってね〜！✌️✨');
     }
 }
 
