@@ -5,5 +5,5 @@
   "minAppVersion": "0.15.0",
   "description": "Pack a note and its embedded assets into a standalone portable ZIP file, or import and unpack a ZIP bundle into your vault with automatic asset and link management.",
   "author": "Satoshi Nagayasu",
-  "isDesktopOnly": false
+  "isDesktopOnly": true
 }

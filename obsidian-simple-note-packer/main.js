@@ -1,7 +1,22 @@
 
-const { Plugin, PluginSettingTab, Setting, Notice, Modal, TFile, TFolder, normalizePath } = require('obsidian');
-const fs = require('fs');
-const path = require('path');
+const { Plugin, PluginSettingTab, Setting, Notice, Modal, TFile, TFolder, normalizePath, Platform } = require('obsidian');
+let nodeFs = null;
+let nodePath = null;
+try { nodeFs = require('fs'); } catch (e) {}
+try { nodePath = require('path'); } catch (e) {}
+
+function getBasename(filePath) {
+    if (!filePath) return '';
+    const clean = filePath.replace(/\\/g, '/');
+    const parts = clean.split('/');
+    return parts[parts.length - 1] || '';
+}
+
+function getExtname(filePath) {
+    const base = getBasename(filePath);
+    const idx = base.lastIndexOf('.');
+    return idx >= 0 ? base.substring(idx) : '';
+}
 
 // Attach JSZip
 const JSZip = (function() {
@@ -113,12 +128,16 @@ class SimpleNotePackerPlugin extends Plugin {
     // EXPORT LOGIC
     // ==========================================
     async exportNotePackage(file) {
+        if (Platform.isMobile) {
+            new Notice('Simple Note Packer はPC（デスクトップ）専用プラグインだよ！💻✨');
+            return;
+        }
+
         try {
             // ファイル名のサニタイズ（Windows/OS禁止文字の除去）
             const sanitizedBasename = file.basename.replace(/[\\/:*?"<>|]/g, '_');
             const defaultFilename = `${sanitizedBasename}.zip`;
 
-            // ネイティブ保存ダイアログを表示
             const saveFilePath = await this.showSaveDialog(defaultFilename);
             if (!saveFilePath) {
                 new Notice('エクスポートをキャンセルしたよ！');
@@ -205,17 +224,16 @@ class SimpleNotePackerPlugin extends Plugin {
             // 書き換えたMarkdownファイルをZIPに格納
             rootFolder.file(`${file.name}`, content);
 
-            // ZIPバイナリ生成 (nodebuffer)
-            const zipBuffer = await zip.generateAsync({
-                type: 'nodebuffer',
+            // ZIPバイナリ生成
+            const zipUint8Array = await zip.generateAsync({
+                type: 'uint8array',
                 compression: 'DEFLATE',
                 compressionOptions: { level: 6 }
             });
 
-            // 保存先へ書き込み
-            await this.writeZipToFile(saveFilePath, zipBuffer);
-
-            new Notice(`「${path.basename(saveFilePath)}」のエクスポート大成功！🎉（画像: ${assetMap.size}件）`);
+            const buffer = Buffer.from(zipUint8Array);
+            await this.writeZipToFile(saveFilePath, buffer);
+            new Notice(`「${getBasename(saveFilePath)}」のエクスポート大成功！🎉（画像: ${assetMap.size}件）`);
             this.revealInExplorer(saveFilePath);
         } catch (err) {
             console.error('Simple Note Packer Export Error:', err);
@@ -249,8 +267,8 @@ class SimpleNotePackerPlugin extends Plugin {
         // フォールバック: Downloadsフォルダ
         try {
             const os = require('os');
-            const downloads = path.join(os.homedir(), 'Downloads');
-            return path.join(downloads, defaultName);
+            const downloads = nodePath ? nodePath.join(os.homedir(), 'Downloads') : '';
+            return downloads && nodePath ? nodePath.join(downloads, defaultName) : defaultName;
         } catch (e) {
             return null;
         }
@@ -258,14 +276,19 @@ class SimpleNotePackerPlugin extends Plugin {
 
     async writeZipToFile(filePath, dataBuffer) {
         return new Promise((resolve, reject) => {
-            fs.writeFile(filePath, dataBuffer, (err) => {
-                if (err) reject(err);
-                else resolve();
-            });
+            if (nodeFs && nodeFs.writeFile) {
+                nodeFs.writeFile(filePath, dataBuffer, (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            } else {
+                reject(new Error('ファイル書き込みモジュールが利用できません'));
+            }
         });
     }
 
     revealInExplorer(filePath) {
+        if (Platform.isMobile) return;
         try {
             const { shell } = require('electron');
             if (shell && shell.showItemInFolder) {
@@ -280,6 +303,11 @@ class SimpleNotePackerPlugin extends Plugin {
     // IMPORT LOGIC
     // ==========================================
     async promptImportZip(targetFolderPath = null) {
+        if (Platform.isMobile) {
+            new Notice('Simple Note Packer はPC（デスクトップ）専用プラグインだよ！💻✨');
+            return;
+        }
+
         try {
             const electron = require('electron');
             const remote = electron.remote;
@@ -295,8 +323,8 @@ class SimpleNotePackerPlugin extends Plugin {
                 });
                 if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
                     const filePath = result.filePaths[0];
-                    const buffer = fs.readFileSync(filePath);
-                    const zipFilename = path.basename(filePath);
+                    const buffer = nodeFs ? nodeFs.readFileSync(filePath) : null;
+                    const zipFilename = getBasename(filePath);
 
                     // インポート設定モーダルを表示！
                     new ImportPackageModal(this.app, zipFilename, targetFolderPath, async (options) => {
@@ -304,31 +332,12 @@ class SimpleNotePackerPlugin extends Plugin {
                     }).open();
                     return;
                 }
-                return;
+                return; // ユーザーがキャンセルした場合は終了
             }
         } catch (e) {
-            console.warn('Native open dialog failed, falling back:', e);
+            console.warn('Native open dialog failed:', e);
+            new Notice(`ファイル選択でエラーが出ちゃった…💦: ${e.message}`);
         }
-
-        // Web input フォールバック
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = '.zip';
-        fileInput.style.display = 'none';
-
-        fileInput.onchange = async (e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-                const arrayBuffer = await file.arrayBuffer();
-                new ImportPackageModal(this.app, file.name, targetFolderPath, async (options) => {
-                    await this.importZipBuffer(arrayBuffer, file.name, options);
-                }).open();
-            }
-            document.body.removeChild(fileInput);
-        };
-
-        document.body.appendChild(fileInput);
-        fileInput.click();
     }
 
     async importZipBuffer(zipData, zipFilename, options) {
@@ -360,10 +369,10 @@ class SimpleNotePackerPlugin extends Plugin {
             zip.forEach((relativePath, zipEntry) => {
                 if (zipEntry.dir) return;
 
-                const filename = path.basename(relativePath);
+                const filename = getBasename(relativePath);
                 if (filename.startsWith('.') || filename.startsWith('__MACOSX')) return;
 
-                const ext = path.extname(filename).toLowerCase().replace('.', '');
+                const ext = getExtname(filename).toLowerCase().replace('.', '');
                 if (ext === 'md') {
                     mdFiles.push({ relativePath, zipEntry, filename });
                 } else if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'pdf', 'mp4', 'webm'].includes(ext)) {
@@ -398,7 +407,7 @@ class SimpleNotePackerPlugin extends Plugin {
                 // Markdown形式の画像リンク ![alt](./image.png) や ![alt](image.png) を Wikiリンクに変換
                 mdContent = mdContent.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, imgPath) => {
                     const decoded = decodeURI(imgPath).split('?')[0].split('#')[0];
-                    const filename = path.basename(decoded);
+                    const filename = getBasename(decoded);
                     if (savedAssets.has(filename)) {
                         return alt ? `![[${filename}|${alt}]]` : `![[${filename}]]`;
                     }
@@ -407,7 +416,7 @@ class SimpleNotePackerPlugin extends Plugin {
 
                 // 既存のWikiリンク ![[subfolder/image.png]] があっても直接 ![[image.png]] に再バインド
                 mdContent = mdContent.replace(/!\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, (match, linkText, p1) => {
-                    const filename = path.basename(linkText);
+                    const filename = getBasename(linkText);
                     if (savedAssets.has(filename)) {
                         return `![[${filename}${p1 || ''}]]`;
                     }
